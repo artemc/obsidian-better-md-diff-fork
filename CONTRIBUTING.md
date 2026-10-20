@@ -39,7 +39,7 @@ Releases follow the same flow as the author's other Obsidian plugins: `npm versi
 4. `.github/workflows/release.yml` runs `npm run check` with `RELEASE_TAG` (the tag must equal `manifest.json`'s version), signs `main.js`, `manifest.json` and `styles.css` with GitHub artifact attestations, and publishes the release with generated notes.
 5. If the workflow fails, fix the cause and release a new version; do not replace an asset with a locally rebuilt file after signing.
 
-A downloaded asset can be verified with GitHub CLI:
+A downloaded asset can be verified with GitHub CLI 2.49 or newer:
 
 ```bash
 gh attestation verify main.js --repo artemc/obsidian-better-md-diff-fork
