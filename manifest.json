@@ -1,7 +1,7 @@
 {
   "id": "better-md-diff-fork",
   "name": "Better MD Diff Fork",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "minAppVersion": "1.8.0",
   "description": "Compare Markdown with Git HEAD or an earlier commit using line or word diffs, synchronized navigation, and confirmed per-change restoration.",
   "author": "artemc",
