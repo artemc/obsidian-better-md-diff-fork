@@ -15,7 +15,7 @@ describe('document acceptance', () => {
     await expect(review.reject(snapshot, snapshot.diff.changes[0]!, {
       getValue: () => { review.dispose(); return 'new\n'; },
       apply: () => { applied = true; },
-    })).rejects.toThrow('关闭');
+    })).rejects.toThrow('closed');
     expect(applied).toBe(false);
   });
 
@@ -85,9 +85,9 @@ describe('document acceptance', () => {
     const change = snapshot.diff.changes[0]!;
     let current = 'new\n', applied = false;
     const target = { getValue: () => current, apply: () => { applied = true; } };
-    await expect(review.accept(snapshot, { ...change }, () => current)).rejects.toThrow('已变化');
+    await expect(review.accept(snapshot, { ...change }, () => current)).rejects.toThrow('changed');
     current = 'later\n';
-    await expect(review.reject(snapshot, change, target)).rejects.toThrow('已变化');
+    await expect(review.reject(snapshot, change, target)).rejects.toThrow('changed');
     current = 'new\n';
     const controller = new AbortController(); controller.abort();
     await expect(review.reject(snapshot, change, target, controller.signal)).rejects.toThrow();
@@ -149,15 +149,15 @@ describe('document acceptance', () => {
   });
 
   it('validates restored recognition and undo data before using it', () => {
-    expect(() => new ReviewDocument('note.md', { revision: -1, content: 'old', undoContent: null }, async () => {})).toThrow('认可记录');
-    expect(() => new ReviewDocument('note.md', { revision: 0, content: 'old', undoContent: '\0' }, async () => {})).toThrow('二进制');
+    expect(() => new ReviewDocument('note.md', { revision: -1, content: 'old', undoContent: null }, async () => {})).toThrow('acceptance record');
+    expect(() => new ReviewDocument('note.md', { revision: 0, content: 'old', undoContent: '\0' }, async () => {})).toThrow('binary');
   });
 
   it('rejects a partial acceptance whose hybrid baseline exceeds the document limits', async () => {
     const before = 'a\nb\nc\n', current = 'new\na\nb\n';
     const review = new ReviewDocument('note.md', createReviewRecord(before), async () => {}, { maxFileMiB: 1, maxLines: 4 });
     const snapshot = review.snapshot(current);
-    await expect(review.accept(snapshot, snapshot.diff.changes[0]!, () => current)).rejects.toThrow('上限');
+    await expect(review.accept(snapshot, snapshot.diff.changes[0]!, () => current)).rejects.toThrow('limit');
     expect(review.snapshot(current).record.content).toBe(before);
   });
 
@@ -206,8 +206,8 @@ describe('document acceptance', () => {
   it('rejects stale text, foreign snapshots, and queued decisions made against an older recognition state', async () => {
     const { review } = document('old\n');
     const snapshot = review.snapshot('new\n');
-    await expect(review.acceptAll(snapshot, () => 'newer\n')).rejects.toThrow('已变化');
-    await expect(review.acceptAll({ ...snapshot }, () => 'new\n')).rejects.toThrow('已变化');
+    await expect(review.acceptAll(snapshot, () => 'newer\n')).rejects.toThrow('changed');
+    await expect(review.acceptAll({ ...snapshot }, () => 'new\n')).rejects.toThrow('changed');
     const results = await Promise.allSettled([
       review.acceptAll(snapshot, () => 'new\n'),
       review.acceptAll(snapshot, () => 'new\n'),

@@ -1,10 +1,10 @@
 {
-  "id": "better-md-diff",
-  "name": "Better MD Diff",
+  "id": "better-md-diff-fork",
+  "name": "Better MD Diff Fork",
   "version": "0.4.1",
   "minAppVersion": "1.8.0",
-  "description": "Compare Markdown with Git HEAD using paired diffs, synchronized navigation, and confirmed per-change restoration.",
-  "author": "kamac",
-  "authorUrl": "https://github.com/kamacheng",
+  "description": "Compare Markdown with Git HEAD or an earlier commit using line or word diffs, synchronized navigation, and confirmed per-change restoration.",
+  "author": "artemc",
+  "authorUrl": "https://github.com/artemc",
   "isDesktopOnly": true
 }

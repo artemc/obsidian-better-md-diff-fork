@@ -136,19 +136,19 @@ describe('Markdown line diff', () => {
   it('uses configurable byte and line limits for both versions, including UTF-8 bytes', () => {
     const limits = { maxFileMiB: 3, maxLines: 30_000 };
     const text = '中文'.repeat(400_000);
-    expect(() => assertTextSize(text)).toThrow('过大');
+    expect(() => assertTextSize(text)).toThrow('too large');
     expect(() => assertTextSize(text, limits)).not.toThrow();
     expect(() => assertTextSize('中'.repeat(1024 * 1024 + 1), limits)).toThrow('3 MiB');
     const lines = 'same\n'.repeat(25_000);
     expect(computeDiff(lines, `new\n${lines}`, 0, limits).added).toBe(1);
     expect(() => computeDiff(lines, '', 0)).toThrow('20000');
-    expect(() => assertTextSize('a\0b', limits)).toThrow('二进制');
+    expect(() => assertTextSize('a\0b', limits)).toThrow('binary');
   });
 
   it('rejects oversized and binary inputs', () => {
-    expect(() => computeDiff('', 'x'.repeat(MAX_BYTES + 1))).toThrow('过大');
-    expect(() => computeDiff('', '\n'.repeat(MAX_LINES))).toThrow('过大');
-    expect(() => computeDiff('a\0b', '')).toThrow('二进制');
+    expect(() => computeDiff('', 'x'.repeat(MAX_BYTES + 1))).toThrow('too large');
+    expect(() => computeDiff('', '\n'.repeat(MAX_LINES))).toThrow('too large');
+    expect(() => computeDiff('a\0b', '')).toThrow('binary');
   });
 
   it('handles Obsidian syntax as text without losing content', () => {

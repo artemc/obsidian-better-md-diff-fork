@@ -31,7 +31,7 @@ describe('CodeMirror source and live-preview extension', () => {
     expect(document.querySelector('.cm-line.bmd-line--modified')).toBeNull();
     const button = document.querySelector<HTMLButtonElement>('.bmd-gutter-marker--modified');
     expect(button?.textContent).toBe('~1');
-    expect(button?.getAttribute('aria-label')).toContain('修改当前 1 行');
+    expect(button?.getAttribute('aria-label')).toContain('1 current lines modified');
     button?.click();
     expect(open).toHaveBeenCalledWith('note.md', 0, false);
     expect(view?.state.doc.toString()).toBe('new\n');
@@ -53,7 +53,7 @@ describe('CodeMirror source and live-preview extension', () => {
     expect(document.querySelectorAll('.bmd-gutter-range--deleted')).toHaveLength(1);
     const marker = document.querySelector<HTMLButtonElement>('.bmd-gutter-marker--deleted')!;
     expect(marker.textContent).toBe('−2');
-    expect(marker.getAttribute('aria-label')).toContain('已删除 2 行');
+    expect(marker.getAttribute('aria-label')).toContain('2 deleted lines');
     marker.click();
     expect(open).toHaveBeenCalledWith('note.md', after ? 1 : 0, true);
     expect(view?.state.doc.toString()).toBe(after);
@@ -116,7 +116,7 @@ describe('CodeMirror source and live-preview extension', () => {
     const { open } = await setup(before, after, [replacement]);
     const flags = Array.from(document.querySelectorAll<HTMLButtonElement>('.bmd-gutter-marker'));
     expect(flags.map(flag => flag.textContent)).toEqual(labels);
-    expect(flags[0]!.title).toContain(`包含 ${count} 项改动`);
+    expect(flags[0]!.title).toContain(`contains ${count} changes`);
     expect(document.querySelectorAll('.bmd-gutter-range--block')).toHaveLength(1);
     flags[0]!.click();
     expect(open).toHaveBeenLastCalledWith('note.md', 0, false);
@@ -132,8 +132,8 @@ describe('CodeMirror source and live-preview extension', () => {
     const { open } = await setup(paragraphs.before.join('\n'), text);
     const flags = Array.from(document.querySelectorAll<HTMLButtonElement>('.bmd-gutter-marker'));
     expect(flags.map(flag => flag.textContent)).toEqual(['~3', '~5']);
-    expect(flags[0]!.title).toContain('修改当前 3 行（原 3 行）');
-    expect(flags[1]!.title).toContain('修改当前 5 行（原 5 行）');
+    expect(flags[0]!.title).toContain('3 current lines modified (3 original lines)');
+    expect(flags[1]!.title).toContain('5 current lines modified (5 original lines)');
     expect(document.querySelector('.bmd-gutter-range--deleted')).toBeNull();
     flags[1]!.click();
     expect(open).toHaveBeenLastCalledWith('note.md', 6, false);
@@ -144,7 +144,7 @@ describe('CodeMirror source and live-preview extension', () => {
     await setup('keep\nold\nend\n', 'keep\nnew 1\nnew 2\nend\n');
     const flag = document.querySelector('.bmd-gutter-marker--modified')!;
     expect(flag.textContent).toBe('~2');
-    expect(flag.getAttribute('aria-label')).toContain('修改当前 2 行（原 1 行）');
+    expect(flag.getAttribute('aria-label')).toContain('2 current lines modified (1 original lines)');
     expect(document.querySelectorAll('.bmd-gutter-marker')).toHaveLength(1);
     expect(document.querySelectorAll('.bmd-gutter-range--modified')).toHaveLength(2);
   });

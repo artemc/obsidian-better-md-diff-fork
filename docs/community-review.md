@@ -1,12 +1,14 @@
-# 社区扫描说明
+# Community scan notes
 
-## 0.2.0 报告与复现
+These notes come from the upstream project ([kamacheng/better-md-diff](https://github.com/kamacheng/better-md-diff)) and describe its community catalog listing. This fork is not listed in the catalog.
 
-核查来源：[公开社区页](https://community.obsidian.md/plugins/better-md-diff)。页面当时扫描版本为 `0.2.0`，源码提交为 `d250d56f34c394dfe309cf7456f12573e7ad99b8`。报告显示 713 条警告，另列发布产物来源证明缺失和恶意软件扫描不可用。计数可能随平台扫描更新。
+## 0.2.0 report and reproduction
 
-用官方 `eslint-plugin-obsidianmd@0.4.2` 的推荐配置，对同一份 0.2.0 源码做受控对比，仅改变依赖是否可解析，结果如下：
+Source: the [public community page](https://community.obsidian.md/plugins/better-md-diff). At the time it scanned version `0.2.0`, source commit `d250d56f34c394dfe309cf7456f12573e7ad99b8`. The report showed 713 warnings and also listed missing release provenance attestations and an unavailable malware scan. Counts may change as the platform rescans.
 
-| 类型安全规则 | 页面计数 | 无依赖复现 | 依赖可解析 |
+A controlled comparison on the same 0.2.0 source with the recommended configuration of the official `eslint-plugin-obsidianmd@0.4.2`, changing only whether dependencies resolve:
+
+| Type-safety rule | Page count | Without dependencies | Dependencies resolved |
 | --- | ---: | ---: | ---: |
 | no-unsafe-member-access | 289 | 289 | 3 |
 | no-unsafe-call | 273 | 273 | 0 |
@@ -15,36 +17,35 @@
 | no-unsafe-argument | 30 | 30 | 2 |
 | no-redundant-type-constituents | 1 | 1 | 0 |
 
-这说明大量 `error` / `any` 告警可由缺失 SDK、CodeMirror、Node 和 diff 声明精确复现，不应解读为同等数量的真实漏洞。我们无法直接看到平台的安装日志，因此不能断言平台为何没有解析到这些依赖。仓库较 0.2.0 标签更新的锁文件已修复 npm 10 安装兼容性；新的本地门禁在 `npm ci` 后执行官方 lint。
+Most `error` / `any` warnings are reproduced exactly by missing SDK, CodeMirror, Node and diff declarations; they should not be read as the same number of real defects. The platform's install logs are not visible, so we cannot say why those dependencies did not resolve there. The lockfile, newer than the 0.2.0 tag, fixes npm 10 install compatibility; the local gate runs the official lint after `npm ci`.
 
-依赖完整时仍存在的真实类型问题，是 `Array.isArray` 将 CodeMirror 的只读区块数组收窄成 `any[]`。现使用枚举类型判别，未添加强制类型断言，也未关闭类型安全规则。
+The real type issue that remained with complete dependencies was `Array.isArray` narrowing CodeMirror's read-only block array to `any[]`. It now uses an enum-typed discriminant, without forced type assertions or disabled type-safety rules.
 
-## 本地修复
+## Local fixes
 
-- 官方 ESLint 推荐规则接入 `npm run check` 和现有跨平台 CI，零警告门禁。
-- 计时器显式使用 `window.setTimeout` / `window.clearTimeout`。
-- 使用 Obsidian DOM helpers；gutter 元素归属目标编辑器文档，笔记仍仅作为文本渲染。
-- 设置采用共享定义：1.13+ 可搜索，1.8–1.12 保留相同设置与交互。
-- 新版本使用破坏性按钮 API，旧版本保留兼容样式；移除已弃用的 slider tooltip 调用。
-- 移除扫描标记的 `box-decoration-break` 样式，基础高亮与复制行为不变。
-- 根 README 默认英文，保留 Installation / Usage 和简体中文版入口；界面语言自动跟随 Obsidian，支持简体中文和英文。
-- 新增贡献指南和签署发布产物的工作流，发布需要人工确认草稿。
+- The official recommended ESLint rules run in `npm run check` and in cross-platform CI with a zero-warning gate.
+- Timers explicitly use `window.setTimeout` / `window.clearTimeout`.
+- Obsidian DOM helpers are used; gutter elements belong to the target editor's document, and notes are still rendered as text only.
+- Settings use shared definitions: searchable on 1.13+, with the same settings and interaction on 1.8-1.12.
+- New hosts use the destructive button API, older hosts keep a compatible style; the deprecated slider tooltip call is removed.
+- The `box-decoration-break` style flagged by the scan is removed; base highlighting and copying are unchanged.
+- A contributing guide and a release workflow with signed artifacts were added.
 
-## 不应隐藏的能力提示
+## Capability notices that should not be hidden
 
-**Shell Execution / child_process**：本插件必须调用本机 Git。使用 `execFile` 传入参数数组，不经 shell，不执行网络同步或 Git 写入命令；路径按字面值处理，设有输出和超时限制。但用户配置的可执行文件本身仍拥有当前用户权限，因此只应使用可信 Git 路径。这个能力提示可能继续保留，不能靠改名、动态导入或包装 API 来规避扫描。
+**Shell execution / child_process**: the plugin must call the local Git. It uses `execFile` with an argument array, no shell, no network sync and no Git write commands; paths are literal, and output size and time are limited. The configured executable still runs with the current user's permissions, so only a trusted Git path should be used. This notice may remain; it must not be evaded by renaming, dynamic imports or wrapper APIs.
 
-**Malware scan not available**：这是平台扫描服务的可用性披露，源码无法开启它；本地 lint 和依赖审计不等于恶意软件扫描。
+**Malware scan not available**: this is an availability disclosure of the platform's scanning service and cannot be enabled from source. Local lint and dependency audits are not a malware scan.
 
-**GitHub artifact attestations**：工作流已经配置，但只有在 GitHub 上对新标签成功执行并发布其原始签署附件后，才能验证来源证明。不应声称未执行的工作流已经清除了线上提示。
+**GitHub artifact attestations**: the workflow is configured, but provenance can only be verified after it runs on GitHub for a new tag and publishes the original signed assets. Do not claim a workflow that has not run has cleared the notice.
 
-## 0.4.0 发布前依赖核查
+## 0.4.0 dependency review
 
-- `npm audit --omit=dev` 未发现已知生产依赖漏洞；这不是整个工具链或宿主“零风险”的声明。
-- 开发依赖 `source-map-js` 从 1.2.1 更新至 1.2.2，修复 [GHSA-68fv-2mgg-jv7q](https://github.com/advisories/GHSA-68fv-2mgg-jv7q) 的索引 source-map 拒绝服务问题；未改变运行时依赖或最低 Obsidian 版本。锁文件通过 npm 10 重新生成兼容元数据。
-- 完整审计仍有三条中等风险的开发链条目：SDK 依赖的 Moment，以及传播至 `obsidian`、`eslint-plugin-obsidianmd` 的提示（[GHSA-4p3w-j4w9-5jqw](https://github.com/advisories/GHSA-4p3w-j4w9-5jqw)）。这些 npm 包不随插件打包，插件也未调用该 locale 接口；未为了清零审计而采用 `npm audit fix --force` 建议的旧版 lint 插件回退。后续 SDK/工具链升级应独立验证。
+- `npm audit --omit=dev` found no known production dependency vulnerabilities; this is not a "zero risk" statement for the whole toolchain or host.
+- The development dependency `source-map-js` was updated from 1.2.1 to 1.2.2 to fix [GHSA-68fv-2mgg-jv7q](https://github.com/advisories/GHSA-68fv-2mgg-jv7q) (denial of service with indexed source maps); runtime dependencies and the minimum Obsidian version did not change. The lockfile was regenerated with npm 10 for compatible metadata.
+- The full audit still lists three moderate development-chain findings: the SDK's Moment dependency, propagating to `obsidian` and `eslint-plugin-obsidianmd` ([GHSA-4p3w-j4w9-5jqw](https://github.com/advisories/GHSA-4p3w-j4w9-5jqw)). These npm packages are not bundled into the plugin, and the plugin does not call that locale API. The older lint plugin suggested by `npm audit fix --force` was not adopted just to clear the audit. Future SDK or toolchain upgrades should be verified separately.
 
-## 如何复核
+## How to re-check
 
 ```bash
 npm ci
@@ -52,4 +53,4 @@ npm run check
 npm audit --omit=dev
 ```
 
-随后按 [贡献指南](../CONTRIBUTING.md#release-and-attestations) 发布新版本，等待社区页扫描该版本。如果仍出现大批相同的类型错误，向平台反馈时附上版本/提交、CI 链接、依赖安装结果和 lint 输出，请其检查类型解析环境。不要将本地“零 lint 警告”描述成社区平台“零风险”。
+Do not describe local "zero lint warnings" as "zero risk" on the community platform.

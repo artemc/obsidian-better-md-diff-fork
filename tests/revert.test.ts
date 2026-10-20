@@ -79,12 +79,12 @@ describe('independent change restoration', () => {
   it('rejects stale text, changed HEAD/baseline, a cloned change or a display hunk', () => {
     const state = snapshot('old\nkeep\nother\n', 'new\nkeep\nchanged\n');
     const change = state.diff.changes[0]!;
-    expect(() => prepareChangeRevert(state, change, 'newer\n', state.baseline)).toThrow('已变化');
-    expect(() => prepareChangeRevert(state, change, state.current, { ...state.baseline, head: 'head-b' })).toThrow('已变化');
-    expect(() => prepareChangeRevert(state, change, state.current, { ...state.baseline, content: 'different\n' })).toThrow('已变化');
-    expect(() => prepareChangeRevert(state, { ...change }, state.current, state.baseline)).toThrow('已变化');
+    expect(() => prepareChangeRevert(state, change, 'newer\n', state.baseline)).toThrow('changed');
+    expect(() => prepareChangeRevert(state, change, state.current, { ...state.baseline, head: 'head-b' })).toThrow('changed');
+    expect(() => prepareChangeRevert(state, change, state.current, { ...state.baseline, content: 'different\n' })).toThrow('changed');
+    expect(() => prepareChangeRevert(state, { ...change }, state.current, state.baseline)).toThrow('changed');
     // Display groups must not accidentally become write targets again.
-    expect(() => prepareChangeRevert(state, Object.assign({}, change, state.diff.hunks[0]), state.current, state.baseline)).toThrow('已变化');
+    expect(() => prepareChangeRevert(state, Object.assign({}, change, state.diff.hunks[0]), state.current, state.baseline)).toThrow('changed');
   });
 
   it('clears a newly tracked file without deleting it', () => {
@@ -163,13 +163,25 @@ describe('confirmation write barrier', () => {
     let text = state.current;
     const target = { getValue: () => text, apply: vi.fn() };
     const read = async () => { text = 'newer text\n'; return state.baseline; };
-    await expect(executeChangeRevert(state, change, read, target, new AbortController().signal)).rejects.toThrow('已变化');
+    await expect(executeChangeRevert(state, change, read, target, new AbortController().signal)).rejects.toThrow('changed');
     expect(target.apply).not.toHaveBeenCalled();
   });
   it('does not write on Git failure or changed HEAD', async () => {
     const target = { getValue: () => state.current, apply: vi.fn() };
     await expect(executeChangeRevert(state, change, async () => { throw new Error('Git failed'); }, target, new AbortController().signal)).rejects.toThrow('Git failed');
-    await expect(executeChangeRevert(state, change, async () => ({ ...state.baseline, head: 'head-b' }), target, new AbortController().signal)).rejects.toThrow('已变化');
+    await expect(executeChangeRevert(state, change, async () => ({ ...state.baseline, head: 'head-b' }), target, new AbortController().signal)).rejects.toThrow('changed');
     expect(target.apply).not.toHaveBeenCalled();
+  });
+});
+
+describe('restoration against a selected commit', () => {
+  it('rejects a baseline read for another target even when content and hash match', () => {
+    const target = { hash: 'a'.repeat(40), path: 'old.md' };
+    const before = 'alpha\n', current = 'beta\n';
+    const state: ReadyDiffState = { status: 'ready', path: 'test.md', current, baseline: { content: before, head: target.hash, isNew: false, target }, diff: computeDiff(before, current) };
+    const change = state.diff.changes[0]!;
+    expect(apply(current, prepareChangeRevert(state, change, current, { ...state.baseline, target: { ...target } }))).toBe(before);
+    expect(() => prepareChangeRevert(state, change, current, { content: before, head: target.hash, isNew: false })).toThrow('comparison base changed');
+    expect(() => prepareChangeRevert(state, change, current, { ...state.baseline, target: { ...target, path: 'new.md' } })).toThrow('comparison base changed');
   });
 });

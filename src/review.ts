@@ -3,7 +3,7 @@ import { DEFAULT_SETTINGS, type DocumentLimits } from './options';
 import { LocalizedError } from './i18n';
 import { prepareTextRevert, type RevertTarget } from './revert';
 
-const staleMessage = '文档或认可内容已变化，请刷新后重新选择改动。';
+const staleMessage = 'The document or accepted content changed. Refresh and select the change again.';
 
 export interface ReviewRecord {
   revision: number;
@@ -27,7 +27,7 @@ export function parseReviewRecord(value: unknown, limits: DocumentLimits = DEFAU
   if (!value || typeof value !== 'object' || !('revision' in value) || !('content' in value) || !('undoContent' in value)
     || typeof value.revision !== 'number' || !Number.isSafeInteger(value.revision) || value.revision < 0
     || typeof value.content !== 'string' || (value.undoContent !== null && typeof value.undoContent !== 'string')) {
-    throw new LocalizedError('认可记录损坏或不兼容，未自动初始化。');
+    throw new LocalizedError('The acceptance record is corrupt or incompatible. It was not reinitialized.');
   }
   assertTextSize(value.content, limits);
   if (value.undoContent !== null) assertTextSize(value.undoContent, limits);
@@ -100,7 +100,7 @@ export class ReviewDocument {
   }
 
   private check(snapshot: ReviewSnapshot, current?: string): void {
-    if (this.disposed) throw new LocalizedError('审阅文档已关闭，请重新打开。');
+    if (this.disposed) throw new LocalizedError('The review document is closed. Reopen it before continuing.');
     if (!this.snapshots.has(snapshot) || snapshot.record !== this.record || (current !== undefined && normalizeText(current) !== snapshot.current)) throw new LocalizedError(staleMessage);
   }
 
@@ -108,7 +108,7 @@ export class ReviewDocument {
 
   private run(operation: () => Promise<void>, signal?: AbortSignal): Promise<void> {
     const result = this.pending.then(() => {
-      if (this.disposed) throw new LocalizedError('审阅文档已关闭，请重新打开。');
+      if (this.disposed) throw new LocalizedError('The review document is closed. Reopen it before continuing.');
       signal?.throwIfAborted();
       return operation();
     });

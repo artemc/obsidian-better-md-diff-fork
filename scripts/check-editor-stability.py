@@ -30,11 +30,11 @@ case = Path(tempfile.mkdtemp(prefix='stability-', dir=work))
 vault = case / 'vault'; vault.mkdir()
 profile = case / 'profile'; profile.mkdir()
 config = vault / '.obsidian'
-plugin_dir = config / 'plugins' / 'better-md-diff'
+plugin_dir = config / 'plugins' / 'better-md-diff-fork'
 plugin_dir.mkdir(parents=True)
 for name in ['main.js', 'manifest.json', 'styles.css']:
-    shutil.copyfile(repo / 'dist' / 'better-md-diff' / name, plugin_dir / name)
-(config / 'community-plugins.json').write_text('["better-md-diff"]', encoding='utf-8')
+    shutil.copyfile(repo / 'dist' / 'better-md-diff-fork' / name, plugin_dir / name)
+(config / 'community-plugins.json').write_text('["better-md-diff-fork"]', encoding='utf-8')
 (config / 'app.json').write_text(json.dumps({'livePreview': True, 'readableLineLength': False}), encoding='utf-8')
 (profile / 'obsidian.json').write_text(json.dumps({'vaults': {'stability': {'path': str(vault), 'ts': int(time.time() * 1000), 'open': True}}, 'autoUpdate': False}), encoding='utf-8')
 lines = ['Keep before.', 'This line is removed before editing.', 'EDITING ANCHOR stays short.', 'Keep after.']
@@ -77,12 +77,12 @@ try:
             raise RuntimeError('Vault identity mismatch; no note content was accessed.')
         report['checks'].append('isolated vault identity')
         context.route(re.compile(r'^https?://'), lambda route: route.abort())
-        trust = page.get_by_role('button', name=re.compile('信任仓库作者并启用插件|Trust author and enable plugins', re.I))
-        page.wait_for_function("app.plugins.plugins['better-md-diff']?.store || [...document.querySelectorAll('button')].some(b => /信任仓库作者并启用插件|Trust author and enable plugins/i.test(b.textContent))")
+        trust = page.get_by_role('button', name=re.compile('Trust author and enable plugins', re.I))
+        page.wait_for_function("app.plugins.plugins['better-md-diff-fork']?.store || [...document.querySelectorAll('button')].some(b => /Trust author and enable plugins/i.test(b.textContent))")
         if trust.is_visible():
             trust.click(); trust.wait_for(state='hidden')
             page.locator('.modal-container').wait_for(state='visible')
-        page.wait_for_function("app.plugins.plugins['better-md-diff']?.store")
+        page.wait_for_function("app.plugins.plugins['better-md-diff-fork']?.store")
         page.evaluate('app.setting.close()'); page.keyboard.press('Escape')
         page.locator('.modal-container').wait_for(state='hidden')
         page.set_viewport_size({'width': 1160, 'height': 850})
@@ -92,15 +92,15 @@ try:
           await leaf.openFile(app.vault.getAbstractFileByPath('layout.md'));
           await leaf.setViewState({type:'markdown', state:{file:'layout.md', mode:'source', source:false}});
           app.workspace.leftSplit.collapse();
-          await app.plugins.plugins['better-md-diff'].openDiff('layout.md');
+          await app.plugins.plugins['better-md-diff-fork'].openDiff('layout.md');
         }""")
-        page.wait_for_function("app.plugins.plugins['better-md-diff'].store.get('layout.md')?.status === 'ready'")
+        page.wait_for_function("app.plugins.plugins['better-md-diff-fork'].store.get('layout.md')?.status === 'ready'")
         if args.condition == 'no-markers':
-            page.evaluate("async () => { const p = app.plugins.plugins['better-md-diff']; p.settings.showMarkers = false; await p.applySettings(); }")
+            page.evaluate("async () => { const p = app.plugins.plugins['better-md-diff-fork']; p.settings.showMarkers = false; await p.applySettings(); }")
         elif args.condition == 'no-follow':
-            page.evaluate("async () => { const p = app.plugins.plugins['better-md-diff']; p.settings.followEditor = false; p.settings.followNavigation = false; await p.applySettings(); }")
+            page.evaluate("async () => { const p = app.plugins.plugins['better-md-diff-fork']; p.settings.followEditor = false; p.settings.followNavigation = false; await p.applySettings(); }")
         elif args.condition == 'disabled':
-            page.evaluate("app.plugins.disablePlugin('better-md-diff')")
+            page.evaluate("app.plugins.disablePlugin('better-md-diff-fork')")
         page.evaluate(r"""() => {
           const view = app.workspace.getLeavesOfType('markdown')[0].view;
           const editor = view.editor;
@@ -143,7 +143,7 @@ try:
             }""")
             action()
             if args.condition != 'disabled':
-                page.wait_for_function("() => { const state = app.plugins.plugins['better-md-diff'].store.get('layout.md'); return state?.status === 'ready' && state.current === app.workspace.getLeavesOfType('markdown')[0].view.editor.getValue(); }")
+                page.wait_for_function("() => { const state = app.plugins.plugins['better-md-diff-fork'].store.get('layout.md'); return state?.status === 'ready' && state.current === app.workspace.getLeavesOfType('markdown')[0].view.editor.getValue(); }")
             page.wait_for_timeout(1100)
             frames = page.evaluate('() => { window.captureLayout = false; cancelAnimationFrame(window.layoutFrameRequest); return window.layoutFrames; }')
             report['frames'][name] = frames

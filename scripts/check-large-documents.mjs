@@ -28,7 +28,7 @@ try {
   const diff = computeDiff('old\n'.repeat(30_000), 'new\n'.repeat(30_000), 0, { maxFileMiB: 20, maxLines: 200_000 });
   results.push({ scenario: 'disjoint', status: diff.added === 30_000 && diff.deleted === 30_000 ? 'complete' : 'incorrect', elapsedMs: Math.round(performance.now() - started) });
 } catch (error) {
-  results.push({ scenario: 'disjoint', status: error.message.includes('超时') ? 'timeout-protected' : 'unexpected-error', elapsedMs: Math.round(performance.now() - started), error: error.message });
+  results.push({ scenario: 'disjoint', status: error.message.includes('timed out') ? 'timeout-protected' : 'unexpected-error', elapsedMs: Math.round(performance.now() - started), error: error.message });
 }
 const report = { node: process.version, platform: process.platform, note: 'Node core probe, not a UI latency guarantee. The diff timeout does not bound tokenization, parsing or DOM work.', results };
 await writeFile(resolve(directory, 'report.json'), JSON.stringify(report, null, 2));

@@ -1,5 +1,10 @@
+/** Line pairs, or one merged line per change like `git diff --word-diff[=color]`. */
+export type DiffStyle = 'lines' | 'words-plain' | 'words-color';
+export const DIFF_STYLES: readonly DiffStyle[] = ['lines', 'words-plain', 'words-color'];
+
 export interface DiffSettings {
   gitPath: string;
+  diffStyle: DiffStyle;
   showMarkers: boolean;
   fontSize: number;
   contextLines: number;
@@ -16,7 +21,7 @@ export interface DiffSettings {
 export type DocumentLimits = Pick<DiffSettings, 'maxFileMiB' | 'maxLines'>;
 
 export const DEFAULT_SETTINGS: DiffSettings = {
-  gitPath: 'git', showMarkers: true, fontSize: 13, contextLines: 3,
+  gitPath: 'git', diffStyle: 'lines', showMarkers: true, fontSize: 13, contextLines: 3,
   inlineHighlights: true, showWhitespace: true, followEditor: true, followNavigation: true,
   editDelayMs: 350, gitPollSeconds: 5, maxFileMiB: 2, maxLines: 20_000,
 };
@@ -30,6 +35,7 @@ export function normalizeSettings(value: unknown): DiffSettings {
   const input = value && typeof value === 'object' ? value as Record<string, unknown> : {};
   const result = { ...DEFAULT_SETTINGS };
   if (typeof input.gitPath === 'string' && input.gitPath.trim()) result.gitPath = input.gitPath.trim();
+  if (DIFF_STYLES.includes(input.diffStyle as DiffStyle)) result.diffStyle = input.diffStyle as DiffStyle;
   for (const key of ['showMarkers', 'inlineHighlights', 'showWhitespace', 'followEditor', 'followNavigation'] as const) {
     if (typeof input[key] === 'boolean') result[key] = input[key];
   }

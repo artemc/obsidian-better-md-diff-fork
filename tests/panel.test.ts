@@ -5,7 +5,7 @@ import { DiffPanel } from '../src/panel';
 import { DiffStore } from '../src/store';
 import { DEFAULT_SETTINGS } from '../src/options';
 import { installObsidianDom } from './helpers/obsidian-dom';
-import { LocalizedError, setLanguage } from '../src/i18n';
+import { LocalizedError } from '../src/i18n';
 import { prepareChangeRevert } from '../src/revert';
 import { selectedDiffText } from '../src/diff-copy';
 import paragraphs from './fixtures/blank-alignment.json';
@@ -13,18 +13,18 @@ import paragraphs from './fixtures/blank-alignment.json';
 installObsidianDom(document);
 let panel: DiffPanel;
 let store: DiffStore;
-afterEach(() => { panel?.unload(); store?.dispose(); setLanguage('zh-CN'); document.getSelection()?.removeAllRanges(); document.body.replaceChildren(); });
+afterEach(() => { panel?.unload(); store?.dispose(); document.getSelection()?.removeAllRanges(); document.body.replaceChildren(); });
 const before = Array.from({ length: 24 }, (_, i) => `line ${i}\n`).join('');
 const current = before.replace('line 1\n', 'first change\n').replace('line 20\n', 'last change\n');
 async function setup(refresh = async () => {}) {
   store = new DiffStore(async () => ({ content: before, head: 'abc', isNew: false }));
   await store.refresh('note.md', current);
   const settings = { ...DEFAULT_SETTINGS };
-  const navigate = vi.fn(), revert = vi.fn();
-  panel = new DiffPanel({} as WorkspaceLeaf, { store, settings: () => settings, currentPath: () => 'note.md', refresh, navigate, revert });
+  const navigate = vi.fn(), revert = vi.fn(), chooseBaseline = vi.fn(), resetBaseline = vi.fn();
+  panel = new DiffPanel({} as WorkspaceLeaf, { store, settings: () => settings, currentPath: () => 'note.md', refresh, navigate, revert, chooseBaseline, resetBaseline });
   document.body.append(panel.contentEl);
   await panel.onOpen();
-  return { settings, navigate, revert };
+  return { settings, navigate, revert, chooseBaseline, resetBaseline };
 }
 
 describe('diff panel integration', () => {
@@ -33,24 +33,19 @@ describe('diff panel integration', () => {
     const text = current.replace('line 3\n', 'nearby change\n');
     await store.refresh('note.md', text);
     expect(Array.from(document.querySelectorAll('.bmd-region-heading'), el => el.textContent)).toEqual([
-      '当前 1–7 行 · 2 处改动', '当前 18–24 行 · 1 处改动',
+      'Current lines 1–7 · 2 changes', 'Current lines 18–24 · 1 change',
     ]);
-    expect(document.querySelector('.bmd-progress')?.textContent).toBe('改动 1 / 3');
+    expect(document.querySelector('.bmd-progress')?.textContent).toBe('Change 1 / 3');
     panel.move(1);
-    expect(document.querySelector('.bmd-progress')?.textContent).toBe('改动 2 / 3');
+    expect(document.querySelector('.bmd-progress')?.textContent).toBe('Change 2 / 3');
     expect(navigate).toHaveBeenLastCalledWith('note.md', 3, false, true);
     document.querySelectorAll<HTMLButtonElement>('.bmd-revert')[1]!.click();
     const [state, change] = revert.mock.calls[0]!;
     const [edit] = prepareChangeRevert(state, change, text, state.baseline);
     expect(text.slice(0, edit!.from) + edit!.text + text.slice(edit!.to)).toBe(current);
     panel.move(1);
-    expect(document.querySelector('.bmd-progress')?.textContent).toBe('改动 3 / 3');
-    expect(navigate).toHaveBeenLastCalledWith('note.md', 20, false, true);
-    setLanguage('en');
-    expect(Array.from(document.querySelectorAll('.bmd-region-heading'), el => el.textContent)).toEqual([
-      'Current lines 1–7 · 2 changes', 'Current lines 18–24 · 1 change',
-    ]);
     expect(document.querySelector('.bmd-progress')?.textContent).toBe('Change 3 / 3');
+    expect(navigate).toHaveBeenLastCalledWith('note.md', 20, false, true);
     store.updatePresentation(0);
     expect(document.querySelectorAll('.bmd-region-heading')).toHaveLength(3);
     expect(Array.from(document.querySelectorAll('.bmd-region-heading'), el => el.textContent)).toEqual([
@@ -65,7 +60,7 @@ describe('diff panel integration', () => {
     await store.refresh('note.md', text, true, async () => ({ content: paragraphs.before.join('\n'), head: 'abc', isNew: false }));
     const items = document.querySelectorAll('.bmd-change');
     expect(items).toHaveLength(2);
-    expect(document.querySelector('.bmd-progress')?.textContent).toBe('改动 1 / 2');
+    expect(document.querySelector('.bmd-progress')?.textContent).toBe('Change 1 / 2');
     for (const index of [2, 4, 6, 8, 10]) {
       const rows = Array.from(items[index < 6 ? 0 : 1]!.querySelectorAll('.bmd-row-text'), el => el.textContent);
       expect(rows[rows.indexOf(paragraphs.before[index]!) + 1]).toBe(paragraphs.after[index]);
@@ -81,12 +76,8 @@ describe('diff panel integration', () => {
 
   it('labels display blocks separately from independently actionable changes', async () => {
     await setup();
-    expect(Array.from(document.querySelectorAll('.bmd-region-heading')).map(el => el.textContent)).toEqual(['当前 1–5 行 · 1 处改动', '当前 18–24 行 · 1 处改动']);
+    expect(Array.from(document.querySelectorAll('.bmd-region-heading')).map(el => el.textContent)).toEqual(['Current lines 1–5 · 1 change', 'Current lines 18–24 · 1 change']);
     expect(document.querySelectorAll('.bmd-diff-region--selected')).toHaveLength(1);
-    const row = document.querySelectorAll('.bmd-row-text')[0];
-    setLanguage('en');
-    expect(document.querySelector('.bmd-region-heading')?.textContent).toBe('Current lines 1–5 · 1 change');
-    expect(document.querySelectorAll('.bmd-row-text')[0]).toBe(row);
     const body = document.querySelector<HTMLElement>('.bmd-diff-body')!;
     const range = document.createRange(); range.selectNodeContents(body);
     expect(selectedDiffText(body, range)).not.toContain('Current lines');
@@ -101,10 +92,9 @@ describe('diff panel integration', () => {
     const block = document.querySelectorAll('.bmd-diff-region')[1]!;
     await store.refresh('note.md', 'inserted\n' + current);
     expect(document.querySelectorAll('.bmd-diff-region')[1]).toBe(block);
-    expect(block.querySelector('.bmd-region-heading')?.textContent).toBe('当前 19–25 行 · 1 处改动');
+    expect(block.querySelector('.bmd-region-heading')?.textContent).toBe('Current lines 19–25 · 1 change');
     block.querySelector<HTMLButtonElement>('.bmd-region-jump')!.click();
     expect(navigate).toHaveBeenLastCalledWith('note.md', 21, false, true);
-    setLanguage('en');
     expect(block.querySelector('.bmd-region-jump')?.getAttribute('aria-label')).toBe('Current lines 19–25 · 1 change: Go to the first change in this block');
   });
 
@@ -112,8 +102,6 @@ describe('diff panel integration', () => {
     await setup();
     await store.refresh('deleted.md', '', true, async () => ({ content: 'one\ntwo\nthree\n', head: 'abc', isNew: false }));
     panel.setFile('deleted.md');
-    expect(document.querySelector('.bmd-region-heading')?.textContent).toBe('HEAD 1–3 行 · 1 处改动');
-    setLanguage('en');
     expect(document.querySelector('.bmd-region-heading')?.textContent).toBe('HEAD lines 1–3 · 1 change');
     expect(document.querySelector('.bmd-region-heading button')?.getAttribute('type')).toBe('button');
     expect(document.querySelectorAll('.bmd-revert')).toHaveLength(1);
@@ -149,7 +137,7 @@ describe('diff panel integration', () => {
     body.scrollTop = 100;
     const button = document.querySelectorAll<HTMLButtonElement>(selector)[1]!;
     button.focus(); button.click();
-    expect(document.querySelector('.bmd-progress')?.textContent).toBe('改动 2 / 2');
+    expect(document.querySelector('.bmd-progress')?.textContent).toBe('Change 2 / 2');
     expect(body.scrollTop).toBe(150);
     expect(document.activeElement).toBe(button);
     expect(document.querySelector('.bmd-diff-region--selected .bmd-region-jump')?.getAttribute('aria-current')).toBe('location');
@@ -167,7 +155,7 @@ describe('diff panel integration', () => {
     expect(navigate).toHaveBeenLastCalledWith('nearby.md', 3, false, true);
     document.querySelector<HTMLButtonElement>('.bmd-region-jump')!.click();
     expect(navigate).toHaveBeenLastCalledWith('nearby.md', 1, false, true);
-    expect(document.querySelector('.bmd-progress')?.textContent).toBe('改动 1 / 2');
+    expect(document.querySelector('.bmd-progress')?.textContent).toBe('Change 1 / 2');
   });
 
   it.each(['added', 'deleted'])('puts the %s-only change jump on its visible line number', async kind => {
@@ -189,7 +177,7 @@ describe('diff panel integration', () => {
     const selection = document.getSelection()!; selection.addRange(range);
     code.click();
     expect(selection.toString()).toBe(code.textContent);
-    expect(document.querySelector('.bmd-progress')?.textContent).toBe('改动 1 / 2');
+    expect(document.querySelector('.bmd-progress')?.textContent).toBe('Change 1 / 2');
     expect(navigate).not.toHaveBeenCalled(); expect(revert).not.toHaveBeenCalled();
   });
 
@@ -200,7 +188,7 @@ describe('diff panel integration', () => {
     const headings = Array.from(document.querySelectorAll('.bmd-region-heading'), el => el.textContent);
     await store.refresh('note.md', current + 'later\n');
     expect(Array.from(document.querySelectorAll('.bmd-region-heading'), el => el.textContent)).toEqual(headings);
-    expect(document.querySelector('.bmd-progress')?.textContent).toBe('改动 1 / 2');
+    expect(document.querySelector('.bmd-progress')?.textContent).toBe('Change 1 / 2');
     for (const button of Array.from(document.querySelectorAll<HTMLButtonElement>('.bmd-region-jump, .bmd-change-title'))) {
       expect(button.disabled).toBe(true);
       button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -209,8 +197,8 @@ describe('diff panel integration', () => {
     document.getSelection()!.removeAllRanges();
     document.dispatchEvent(new Event('selectionchange'));
     expect(document.querySelector<HTMLButtonElement>('.bmd-region-jump')!.disabled).toBe(false);
-    expect(document.querySelector('.bmd-progress')?.textContent).toBe('改动 1 / 3');
-    expect(document.querySelectorAll('.bmd-region-heading')[1]?.textContent).toBe('当前 18–25 行 · 2 处改动');
+    expect(document.querySelector('.bmd-progress')?.textContent).toBe('Change 1 / 3');
+    expect(document.querySelectorAll('.bmd-region-heading')[1]?.textContent).toBe('Current lines 18–25 · 2 changes');
   });
 
   it('keeps passive cursor following and refreshes on nearest/no-scroll behavior', async () => {
@@ -238,11 +226,11 @@ describe('diff panel integration', () => {
     const navigation = document.querySelector('.bmd-navigation');
     expect(navigation).not.toBeNull();
     expect(navigation!.getAttribute('role')).toBe('group');
-    expect(navigation!.getAttribute('aria-label')).toBe('变更导航');
+    expect(navigation!.getAttribute('aria-label')).toBe('Change navigation');
     expect(Array.from(navigation!.children).map(el => el.className)).toEqual(['bmd-previous bmd-icon-button', 'bmd-progress', 'bmd-next bmd-icon-button']);
-    expect(navigation!.querySelector('.bmd-previous')?.getAttribute('aria-label')).toBe('上一处');
-    expect(navigation!.querySelector('.bmd-next')?.getAttribute('aria-label')).toBe('下一处');
-    expect(navigation!.querySelector('.bmd-progress')?.getAttribute('aria-label')).toBe('改动 1 / 2');
+    expect(navigation!.querySelector('.bmd-previous')?.getAttribute('aria-label')).toBe('Previous');
+    expect(navigation!.querySelector('.bmd-next')?.getAttribute('aria-label')).toBe('Next');
+    expect(navigation!.querySelector('.bmd-progress')?.getAttribute('aria-label')).toBe('Change 1 / 2');
     expect(navigation!.querySelector('.bmd-next [aria-hidden="true"]')?.getAttribute('data-icon')).toBe('arrow-down');
     expect(document.querySelector('.bmd-summary .bmd-help')).toBeNull();
   });
@@ -257,12 +245,11 @@ describe('diff panel integration', () => {
     button!.focus(); button!.click(); button!.click();
     expect(document.querySelectorAll('.bmd-reading-guide')).toHaveLength(1);
     expect(panel.contentEl.querySelector('.bmd-reading-guide')).toBeNull();
-    expect(document.querySelector('.bmd-reading-guide')?.textContent).toContain('深色突出变化字词');
-    expect(document.querySelector('.bmd-reading-guide')?.textContent).toContain('Tab');
-    expect(document.querySelector('.bmd-reading-guide')?.textContent).toContain('左侧旗标 +n、~n');
-    expect(document.querySelector('.bmd-reading-guide')?.textContent).toContain('红色文字为旧文，绿色文字为新增内容');
+    expect(document.querySelector('.bmd-reading-guide')?.textContent).toContain('Deeper colors highlight changed text');
+    expect(document.querySelector('.bmd-reading-guide')?.textContent).toContain('tabs');
+    expect(document.querySelector('.bmd-reading-guide')?.textContent).toContain('Editor flags +n and ~n');
+    expect(document.querySelector('.bmd-reading-guide')?.textContent).toContain('Red text is old content; green text is added content');
     document.querySelector<HTMLButtonElement>('.bmd-guide-close')!.focus();
-    setLanguage('en');
     expect(document.activeElement).toBe(document.querySelector('.bmd-guide-close'));
     expect(document.querySelector('.bmd-guide-title')?.textContent).toBe('Reading guide');
     expect(document.querySelector('.bmd-reading-guide')?.textContent).toContain('Click a block heading');
@@ -280,11 +267,10 @@ describe('diff panel integration', () => {
     settings.inlineHighlights = false; settings.showWhitespace = false;
     document.querySelector<HTMLButtonElement>('.bmd-help-button')!.click();
     const guide = document.querySelector('.bmd-reading-guide');
-    expect(guide?.textContent).not.toContain('深色突出变化字词');
-    expect(guide?.textContent).not.toContain('Tab');
+    expect(guide?.textContent).not.toContain('Deeper colors highlight changed text');
+    expect(guide?.textContent).not.toContain('tabs');
     panel.unload();
     expect(document.querySelector('.bmd-reading-guide')).toBeNull();
-    setLanguage('en');
     expect(guide?.textContent).toBe('');
   });
 
@@ -298,10 +284,10 @@ describe('diff panel integration', () => {
     expect(document.querySelectorAll('.bmd-hunk')).toHaveLength(0);
     expect(document.querySelectorAll('.bmd-change')).toHaveLength(4);
     expect(document.querySelectorAll('.bmd-region-heading')).toHaveLength(1);
-    expect(document.querySelector('.bmd-region-heading')?.textContent).toBe('当前 1–6 行 · 4 处改动');
-    expect(document.querySelector('.bmd-progress')?.textContent).toBe('改动 1 / 4');
+    expect(document.querySelector('.bmd-region-heading')?.textContent).toBe('Current lines 1–6 · 4 changes');
+    expect(document.querySelector('.bmd-progress')?.textContent).toBe('Change 1 / 4');
     panel.move(1);
-    expect(document.querySelector('.bmd-progress')?.textContent).toBe('改动 2 / 4');
+    expect(document.querySelector('.bmd-progress')?.textContent).toBe('Change 2 / 4');
     document.querySelectorAll<HTMLButtonElement>('.bmd-revert')[1]!.click();
     const [state, change] = revert.mock.calls[0]!;
     const edits = prepareChangeRevert(state, change, text, state.baseline);
@@ -323,12 +309,12 @@ describe('diff panel integration', () => {
     const jump = item.querySelector<HTMLButtonElement>('.bmd-change-title')!;
     expect(jump.closest('.bmd-row')).toBe(rows[0]);
     expect(jump.textContent).toBe('2');
-    expect(jump.getAttribute('aria-label')).toContain('定位第 1 项');
+    expect(jump.getAttribute('aria-label')).toContain('Reveal change 1');
     jump.click();
     expect(navigate).toHaveBeenCalledWith('note.md', 1, false, true);
     const revert = item.querySelector<HTMLButtonElement>('.bmd-revert')!;
     expect(revert.textContent).toBe('');
-    expect(revert.title).toBe('还原第 1 项：当前第 2 行');
+    expect(revert.title).toBe('Restore change 1: Current line 2');
     expect(revert.querySelector('[aria-hidden="true"]')?.getAttribute('data-icon')).toBe('undo-2');
   });
 
@@ -360,24 +346,20 @@ describe('diff panel integration', () => {
     await setup();
     await store.refresh('note.md', before);
     expect(document.querySelector('.bmd-stats')).toBeNull();
-    expect(document.querySelector('.bmd-empty-title')?.textContent).toBe('与 HEAD 一致');
-    expect(document.querySelector('.bmd-empty-description')?.textContent).toContain('继续编辑');
-    expect(document.querySelector('.bmd-empty-icon')?.getAttribute('aria-hidden')).toBe('true');
-    expect(document.querySelector('.bmd-progress')?.textContent).toBe('改动 0 / 0');
-    setLanguage('en');
     expect(document.querySelector('.bmd-empty-title')?.textContent).toBe('Matches HEAD');
-    expect(document.querySelectorAll('.bmd-empty')).toHaveLength(1);
+    expect(document.querySelector('.bmd-empty-description')?.textContent).toContain('Keep editing');
+    expect(document.querySelector('.bmd-empty-icon')?.getAttribute('aria-hidden')).toBe('true');
     expect(document.querySelector('.bmd-progress')?.textContent).toBe('Change 0 / 0');
+    expect(document.querySelectorAll('.bmd-empty')).toHaveLength(1);
     expect(document.querySelector('.bmd-progress')?.getAttribute('aria-label')).toBe('No changes');
     expect(document.querySelector<HTMLButtonElement>('.bmd-next')?.disabled).toBe(true);
   });
 
-  it('switches an open panel to English without replacing source nodes or the selection', async () => {
+  it('labels controls in English without replacing source nodes or the selection', async () => {
     await setup();
     const code = document.querySelector('.bmd-row--added .bmd-row-text')!;
     const range = document.createRange(); range.selectNodeContents(code);
     document.getSelection()!.removeAllRanges(); document.getSelection()!.addRange(range);
-    setLanguage('en');
     expect(document.querySelector('.bmd-next')?.getAttribute('aria-label')).toBe('Next');
     expect(document.querySelector('.bmd-progress')?.textContent).toBe('Change 1 / 2');
     expect(document.querySelector('.bmd-progress')?.getAttribute('aria-label')).toBe('Change 1 / 2');
@@ -388,10 +370,9 @@ describe('diff panel integration', () => {
     expect(document.getSelection()!.toString()).toBe('first change');
   });
 
-  it('translates an already cached error without another Git read', async () => {
+  it('shows a Git read error in place of the diff', async () => {
     await setup();
-    await store.refresh('note.md', current, true, async () => { throw new LocalizedError('读取 Git 失败，请刷新重试。'); });
-    setLanguage('en');
+    await store.refresh('note.md', current, true, async () => { throw new LocalizedError('Failed to read Git. Refresh and try again.'); });
     expect(document.querySelector('.bmd-message')?.textContent).toBe('Failed to read Git. Refresh and try again.');
   });
 
@@ -423,12 +404,12 @@ describe('diff panel integration', () => {
 
   it('shows progress and navigates without taking source focus', async () => {
     const { navigate } = await setup();
-    expect(document.querySelector('.bmd-progress')?.textContent).toBe('改动 1 / 2');
+    expect(document.querySelector('.bmd-progress')?.textContent).toBe('Change 1 / 2');
     document.querySelector<HTMLButtonElement>('.bmd-next')!.click();
-    expect(document.querySelector('.bmd-progress')?.textContent).toBe('改动 2 / 2');
+    expect(document.querySelector('.bmd-progress')?.textContent).toBe('Change 2 / 2');
     expect(navigate).toHaveBeenLastCalledWith('note.md', 20, false, true);
     expect(panel.move(1)).toBe(true);
-    expect(document.querySelector('.bmd-progress')?.textContent).toBe('改动 1 / 2');
+    expect(document.querySelector('.bmd-progress')?.textContent).toBe('Change 1 / 2');
   });
 
   it('defers changed content while copying, then renders after the selection collapses', async () => {
@@ -449,11 +430,70 @@ describe('diff panel integration', () => {
     await setup(refresh);
     const button = document.querySelector<HTMLButtonElement>('.bmd-refresh')!;
     button.click(); button.click();
-    expect(button.textContent).toBe('刷新中…');
+    expect(button.textContent).toBe('Refreshing…');
     expect(button.disabled).toBe(true);
     expect(refresh).toHaveBeenCalledOnce();
     resolve(); await Promise.resolve(); await Promise.resolve();
-    expect(button.textContent).toBe('刷新');
+    expect(button.textContent).toBe('Refresh');
     expect(button.disabled).toBe(false);
   });
+
+  it('renders word styles as merged lines while navigation and restoration stay per change', async () => {
+    const { settings, navigate, revert } = await setup();
+    const text = before.replace('line 1\n', 'line one\n').replace('line 20\n', 'line twenty\nadded line\n');
+    await store.refresh('note.md', text);
+    settings.diffStyle = 'words-plain';
+    store.updatePresentation(3);
+    const rowTexts = () => Array.from(document.querySelectorAll('.bmd-change .bmd-row-text'), (el) => el.textContent);
+    expect(rowTexts()).toEqual(['line [-1-]{+one+}', 'line [-20-]{+twenty+}', '{+added line+}']);
+    expect(document.querySelectorAll('.bmd-row--deleted, .bmd-row--added').length).toBe(1);
+    const merged = document.querySelector<HTMLElement>('.bmd-change .bmd-row')!;
+    expect([merged.dataset.oldLine, merged.dataset.newLine]).toEqual(['2', '2']);
+    expect(merged.querySelector('.bmd-change-title')?.textContent).toBe('2');
+    expect(document.querySelector('.bmd-progress')?.textContent).toBe('Change 1 / 2');
+    panel.move(1);
+    expect(navigate).toHaveBeenLastCalledWith('note.md', 20, false, true);
+    expect(document.querySelector('.bmd-row--current .bmd-row-text')?.textContent).toBe('line [-20-]{+twenty+}');
+    document.querySelectorAll<HTMLButtonElement>('.bmd-revert')[1]!.click();
+    const [state, change] = revert.mock.calls[0]!;
+    const [edit] = prepareChangeRevert(state, change, text, state.baseline);
+    expect(text.slice(0, edit!.from) + edit!.text + text.slice(edit!.to)).toBe(before.replace('line 1\n', 'line one\n'));
+
+    // Cached word cards are reused when only their coordinates move.
+    const last = document.querySelectorAll('.bmd-diff-region')[1];
+    const shifted = text.replace('line 10\n', 'line 10\nextra\n');
+    await store.refresh('note.md', shifted);
+    expect(document.querySelectorAll('.bmd-diff-region')[2]).toBe(last);
+    expect(last?.querySelector<HTMLElement>('.bmd-change .bmd-row')?.dataset.newLine).toBe('22');
+
+    settings.diffStyle = 'words-color';
+    store.updatePresentation(3);
+    expect(rowTexts()[0]).toBe('line 1one');
+    expect(document.querySelector('.bmd-panel')?.classList.contains('bmd-words-color')).toBe(true);
+    settings.diffStyle = 'lines';
+    store.updatePresentation(3);
+    expect(document.querySelectorAll('.bmd-row--word')).toHaveLength(0);
+    expect(document.querySelector('.bmd-row--deleted .bmd-row-text')?.textContent).toBe('line 1');
+  });
+
+  it('names a selected commit as the base and offers switching back to HEAD', async () => {
+    const { chooseBaseline, resetBaseline } = await setup();
+    const hash = 'f'.repeat(40);
+    const text = before.replace('line 20\n', '');
+    await store.refresh('note.md', text, true, async () => ({ content: before, head: hash, isNew: false, target: { hash, path: 'old/note.md', subject: 'Older draft' } }));
+    const reference = document.querySelector<HTMLButtonElement>('button.bmd-baseline-ref')!;
+    expect(reference.textContent).toBe('Commitffffffff');
+    expect(document.querySelector('.bmd-baseline-subject')?.textContent).toBe('Older draft · old/note.md');
+    expect(document.querySelector('.bmd-change')?.getAttribute('aria-label')).toBe('Change 1 · Restore ffffffff line 21');
+    reference.click();
+    expect(chooseBaseline).toHaveBeenCalledWith('note.md');
+    document.querySelector<HTMLButtonElement>('.bmd-baseline-reset')!.click();
+    expect(resetBaseline).toHaveBeenCalledWith('note.md');
+    await store.refresh('note.md', before);
+    expect(document.querySelector('.bmd-empty-title')?.textContent).toBe('Matches ffffffff');
+    await store.refresh('note.md', text, true, async () => ({ content: before, head: 'abc', isNew: false }));
+    expect(document.querySelector('button.bmd-baseline-ref')?.textContent).toBe('HEADabc');
+    expect(document.querySelector('.bmd-baseline-reset')).toBeNull();
+  });
 });
+

@@ -1,6 +1,8 @@
-# Contributing / 参与开发
+# Contributing
 
-欢迎报告问题和提交小范围改进。请勿在 issue、测试或演示中附带真实笔记、访问令牌或个人配置。
+Issues and small improvements are welcome. Never attach real notes, access tokens or personal configuration to issues, tests or demos.
+
+Everything in the repository is English: interface text, settings, comments, documentation and commit messages. `npm run check` fails on Chinese, Cyrillic, Japanese or Korean text outside `tests/` and the host scripts, which keep deliberate Unicode fixtures.
 
 ## Development
 
@@ -16,7 +18,7 @@ npm run dev
 
 When changing dependencies with npm 11, also run `npx npm@10 install --package-lock-only --ignore-scripts` and verify `npx npm@10 ci` as well as `npm ci`: npm 11 can omit a nested esbuild lock entry that npm 10 requires. Do not hand-edit that entry.
 
-The ESLint plugin's old Obsidian peer/dependency requirement is overridden to the project's pinned SDK version. This keeps one set of host declarations and allows plain `npm ci`; do not use `--force` or disable the type-safety rules to silence diagnostics. Brand/acronym allowances preserve `Better MD Diff`, `Markdown`, `Git`, `HEAD` and `PATH`; they do not change the Chinese UI.
+The ESLint plugin's old Obsidian peer/dependency requirement is overridden to the project's pinned SDK version. This keeps one set of host declarations and allows plain `npm ci`; do not use `--force` or disable the type-safety rules to silence diagnostics. Brand/acronym allowances preserve `Better MD Diff`, `Markdown`, `Git`, `HEAD` and `PATH`.
 
 ## Changes and testing
 
@@ -29,18 +31,19 @@ The ESLint plugin's old Obsidian peer/dependency requirement is overridden to th
 
 ## Release and attestations
 
-1. Update `package.json`, the lockfile (including its root package entry), `manifest.json` and `versions.json` to a **new** version. Do not move or reuse an existing release tag.
-2. Run `npm ci && npm run check` and complete the isolated-vault checks.
-3. Review and commit the changes. Push a tag that exactly matches the manifest version, without `v` (for example `0.2.1` when preparing that version).
-4. `.github/workflows/release.yml` builds from the tag, signs the three release assets with GitHub artifact attestations, and creates a **draft** release. It never publishes automatically.
-5. Review the workflow, draft and assets; then publish the draft manually. Do not replace an asset with a locally rebuilt file after signing. If a draft already exists, the workflow fails rather than overwriting it; inspect and resolve it manually before retrying.
-6. Check the community scorecard after it scans the new release. Local fixes do not alter the scorecard of an older release.
+Releases follow the same flow as the author's other Obsidian plugins: `npm version` bumps every version file, the tag push builds and publishes.
+
+1. Start from a clean, up-to-date `main` and run `npm ci && npm run check`, plus the isolated-vault checks when the change affects the interface.
+2. Run `npm version <x.y.z>` with a **new** version. It updates `package.json` and `package-lock.json`; `version-bump.mjs` copies the version into `manifest.json` and adds it to `versions.json`. npm then commits `<x.y.z>` and creates the tag without a `v` prefix (`.npmrc`).
+3. Push with `git push --follow-tags`. Never move or reuse an existing tag.
+4. `.github/workflows/release.yml` runs `npm run check` with `RELEASE_TAG` (the tag must equal `manifest.json`'s version), signs `main.js`, `manifest.json` and `styles.css` with GitHub artifact attestations, and publishes the release with generated notes.
+5. If the workflow fails, fix the cause and release a new version; do not replace an asset with a locally rebuilt file after signing.
 
 A downloaded asset can be verified with GitHub CLI:
 
 ```bash
-gh attestation verify main.js --repo kamacheng/better-md-diff
-gh attestation verify styles.css --repo kamacheng/better-md-diff
+gh attestation verify main.js --repo artemc/obsidian-better-md-diff-fork
+gh attestation verify styles.css --repo artemc/obsidian-better-md-diff-fork
 ```
 
-Attestations prove build provenance, not absence of vulnerabilities. The signing step requires GitHub Actions OIDC and cannot be meaningfully verified by a local build alone. See [community review notes](docs/community-review.md) for residual disclosures.
+Attestations prove build provenance, not absence of vulnerabilities. See [community scan notes](docs/community-review.md) for disclosures inherited from the upstream project.

@@ -8,13 +8,13 @@ import { createReviewRecord, parseReviewRecord, ReviewDocument, type ReviewRecor
 type Phase = 'new' | 'initializing' | 'ready';
 interface Index { phase: Phase; documents: Map<string, boolean> }
 const maxIndexBytes = 8 * 1024 * 1024;
-const corrupt = () => new LocalizedError('认可记录损坏或不兼容，未自动初始化。');
+const corrupt = () => new LocalizedError('The acceptance record is corrupt or incompatible. It was not reinitialized.');
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 const hasCode = (error: unknown, code: string) => !!error && typeof error === 'object' && 'code' in error && error.code === code;
 
 function checkPath(path: string): void {
   if (!path.toLowerCase().endsWith('.md') || /[\\\0:]/.test(path) || path.split('/').some((part) => !part || part === '.' || part === '..')) {
-    throw new LocalizedError('审阅文档路径无效。');
+    throw new LocalizedError('Invalid review document path.');
   }
 }
 
@@ -34,7 +34,7 @@ async function readJson(path: string, maxBytes: number): Promise<unknown> {
 
 async function writeJson(path: string, value: unknown, maxBytes: number): Promise<void> {
   const text = JSON.stringify(value);
-  if (Buffer.byteLength(text, 'utf8') > maxBytes) throw new LocalizedError('审阅存储超过大小上限，未保存。');
+  if (Buffer.byteLength(text, 'utf8') > maxBytes) throw new LocalizedError('Acceptance storage exceeds the size limit. Nothing was saved.');
   const temp = join(dirname(path), `${basename(path)}.${randomUUID()}.tmp`);
   try {
     const handle = await open(temp, 'wx', 0o600);
@@ -64,10 +64,10 @@ export class ReviewStorage {
 
   static async open(vaultRoot: string, dataRoot: string, limits: DocumentLimits = DEFAULT_SETTINGS): Promise<ReviewStorage> {
     const vault = await realpath(vaultRoot), base = await realpath(dataRoot);
-    const directory = join(base, `better-md-diff-${hash(vault)}`);
-    if (inside(vault, directory)) throw new LocalizedError('审阅存储必须位于 vault 和 Git 仓库之外。');
+    const directory = join(base, `better-md-diff-fork-${hash(vault)}`);
+    if (inside(vault, directory)) throw new LocalizedError('Acceptance storage must be outside the vault and Git repositories.');
     for (let path = directory; ; path = dirname(path)) {
-      try { await lstat(join(path, '.git')); throw new LocalizedError('审阅存储必须位于 vault 和 Git 仓库之外。'); }
+      try { await lstat(join(path, '.git')); throw new LocalizedError('Acceptance storage must be outside the vault and Git repositories.'); }
       catch (error) { if (!hasCode(error, 'ENOENT')) throw error; }
       if (dirname(path) === path) break;
     }
@@ -79,7 +79,7 @@ export class ReviewStorage {
     let lock: FileHandle;
     try { lock = await open(join(directory, 'writer.lock'), 'wx', 0o600); }
     catch (error) {
-      if (hasCode(error, 'EEXIST')) throw new LocalizedError('审阅存储已被占用；请先关闭其他实例，勿直接删除写锁。');
+      if (hasCode(error, 'EEXIST')) throw new LocalizedError('Acceptance storage is in use. Close other instances first; do not delete the writer lock directly.');
       throw error;
     }
     const token = JSON.stringify({ pid: process.pid, owner: randomUUID() });
@@ -97,7 +97,7 @@ export class ReviewStorage {
 
   beginInitialization(paths: readonly string[]): Promise<void> {
     return this.run(async () => {
-      if (this.index.phase !== 'new') throw new LocalizedError('审阅初始化状态不允许此操作。');
+      if (this.index.phase !== 'new') throw new LocalizedError('The acceptance initialization state does not allow this operation.');
       for (const path of paths) checkPath(path);
       await this.saveIndex({ phase: 'initializing', documents: new Map(paths.map((path) => [path, false])) });
     });
@@ -106,7 +106,7 @@ export class ReviewStorage {
   /** The host must supply a freshly checked initial snapshot, never silently re-read after an edit. */
   initializeDocument(path: string, content: string): Promise<void> {
     return this.run(async () => {
-      if (this.index.phase !== 'initializing' || !this.index.documents.has(path)) throw new LocalizedError('审阅初始化状态不允许此操作。');
+      if (this.index.phase !== 'initializing' || !this.index.documents.has(path)) throw new LocalizedError('The acceptance initialization state does not allow this operation.');
       if (this.index.documents.get(path)) return;
       let record = await this.readRecord(path, true);
       if (record && (record.revision !== 0 || record.undoContent !== null)) throw corrupt();
@@ -121,7 +121,7 @@ export class ReviewStorage {
 
   finishInitialization(): Promise<void> {
     return this.run(async () => {
-      if (this.index.phase !== 'initializing' || this.pendingPaths.length) throw new LocalizedError('审阅初始化尚未完成，不能自动认可剩余文档。');
+      if (this.index.phase !== 'initializing' || this.pendingPaths.length) throw new LocalizedError('Acceptance initialization is incomplete. Remaining documents cannot be accepted automatically.');
       for (const path of this.index.documents.keys()) await this.readRecord(path);
       await this.saveIndex({ ...this.index, phase: 'ready' });
     });
@@ -130,7 +130,7 @@ export class ReviewStorage {
   document(path: string): Promise<ReviewDocument> {
     return this.run(async () => {
       checkPath(path);
-      if (this.index.phase !== 'ready') throw new LocalizedError('审阅初始化尚未完成，不能自动认可剩余文档。');
+      if (this.index.phase !== 'ready') throw new LocalizedError('Acceptance initialization is incomplete. Remaining documents cannot be accepted automatically.');
       const cached = this.documents.get(path);
       if (cached) return cached;
       if (!this.index.documents.has(path)) {
@@ -143,7 +143,7 @@ export class ReviewStorage {
       const doc = new ReviewDocument(path, saved, (next) => this.run(async () => {
         const disk = (await this.readRecord(path))!;
         if (disk.revision !== saved.revision || disk.content !== saved.content || disk.undoContent !== saved.undoContent || next.revision !== saved.revision + 1) {
-          throw new LocalizedError('文档或认可内容已变化，请刷新后重新选择改动。');
+          throw new LocalizedError('The document or accepted content changed. Refresh and select the change again.');
         }
         await this.writeRecord(path, next);
         saved = next;
@@ -166,9 +166,9 @@ export class ReviewStorage {
   }
 
   private run<T>(operation: () => Promise<T>): Promise<T> {
-    if (this.closing) return Promise.reject(new LocalizedError('审阅存储已关闭。'));
+    if (this.closing) return Promise.reject(new LocalizedError('Acceptance storage is closed.'));
     const result = this.pending.then(async () => {
-      if (await readFile(join(this.directory, 'writer.lock'), 'utf8') !== this.lockToken) throw new LocalizedError('审阅存储写锁已变化，操作已停止。');
+      if (await readFile(join(this.directory, 'writer.lock'), 'utf8') !== this.lockToken) throw new LocalizedError('The acceptance storage lock changed. The operation was stopped.');
       return operation();
     });
     this.pending = result.then(() => {}, () => {});

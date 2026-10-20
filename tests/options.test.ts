@@ -18,6 +18,11 @@ describe('settings defaults and validation', () => {
     expect(normalizeSettings({ maxFileMiB: Infinity, maxLines: 'unlimited' })).toEqual(DEFAULT_SETTINGS);
     expect(normalizeSettings({ maxFileMiB: 999, maxLines: -1 })).toMatchObject({ maxFileMiB: 20, maxLines: 1000 });
   });
+  it('accepts only known diff styles', () => {
+    expect(normalizeSettings({ diffStyle: 'words-plain' }).diffStyle).toBe('words-plain');
+    expect(normalizeSettings({ diffStyle: 'words-color' }).diffStyle).toBe('words-color');
+    expect(normalizeSettings({ diffStyle: 'porcelain' }).diffStyle).toBe('lines');
+  });
   it('bounds numeric settings and rejects invalid persisted values', () => {
     expect(normalizeSettings({ fontSize: 99, contextLines: -1, editDelayMs: 1, gitPollSeconds: 999 })).toMatchObject({ fontSize: 22, contextLines: 0, editDelayMs: 100, gitPollSeconds: 60 });
     expect(normalizeSettings({ fontSize: NaN, contextLines: Infinity, editDelayMs: '0', showMarkers: 'false', gitPath: '' })).toEqual(DEFAULT_SETTINGS);

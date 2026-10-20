@@ -1,14 +1,16 @@
 import { ItemView, setIcon, type WorkspaceLeaf } from 'obsidian';
 import { changeAnchor, changeRange, type DiffHunk, type DiffRow, type LineChange } from './diff';
 import type { DiffStore, ReadyDiffState } from './store';
-import type { DiffSettings } from './options';
-import { highlightHunks, localizeHighlightedText, pairDiffRows, renderHighlightedText, type InlineHighlights } from './inline-diff';
-import { onLanguageChange, t, type MessageKey } from './i18n';
+import type { DiffSettings, DiffStyle } from './options';
+import { highlightHunks, pairDiffRows, renderHighlightedText, type InlineHighlights } from './inline-diff';
+import { renderWordLine, wordDiffLines } from './word-diff';
+import { baselineName } from './git';
+import { t } from './i18n';
 import { centerDiffChange, findDiffLocation, revealDiffRow } from './diff-navigation';
 import { selectedDiffText } from './diff-copy';
 import { ReadingGuideModal } from './reading-guide';
 
-export const DIFF_VIEW = 'better-md-diff-view';
+export const DIFF_VIEW = 'better-md-diff-fork-view';
 export const DIFF_ICON = 'file-diff';
 export interface DiffPanelHost {
   store: DiffStore;
@@ -17,6 +19,9 @@ export interface DiffPanelHost {
   refresh(path: string): Promise<void>;
   navigate(path: string, line: number, focus?: boolean, center?: boolean): void;
   revert(snapshot: ReadyDiffState, change: LineChange): void;
+  /** Pick a commit, or HEAD, as this document's comparison base. */
+  chooseBaseline(path: string): void;
+  resetBaseline(path: string): void;
 }
 interface ChangeItem {
   element: HTMLElement;
@@ -31,7 +36,10 @@ interface HunkCard {
   key: string;
   element: HTMLElement;
   heading: HTMLButtonElement;
+  /** Display element of each hunk row; merged word lines are shared by several rows. */
   rows: HTMLElement[];
+  /** Hunk row indexes supplying each display line's old/new numbers, refreshed when cards are reused. */
+  numbers: { element: HTMLElement; old?: number; new?: number }[];
   pairs: Map<number, number>;
   limited: boolean;
   hunk: DiffHunk;
@@ -46,6 +54,7 @@ export class DiffPanel extends ItemView {
   private rowElements = new Map<DiffRow, HTMLElement>();
   private rowPairs = new Map<DiffRow, DiffRow>();
   private rendered?: ReadyDiffState;
+  private renderedStyle?: DiffStyle;
   private pendingRender = false;
   private followedLine?: number;
   private currentRow?: HTMLElement;
@@ -62,17 +71,17 @@ export class DiffPanel extends ItemView {
   private helpModal?: ReadingGuideModal;
   private refreshRequest?: symbol;
   private summaryKey?: string;
-  private feedbackKey?: MessageKey;
+  private feedbackKey?: string;
 
   constructor(leaf: WorkspaceLeaf, private host: DiffPanelHost) { super(leaf); }
   getViewType(): string { return DIFF_VIEW; }
-  getDisplayText(): string { return t('Git 差异'); }
+  getDisplayText(): string { return t('Git diff'); }
   getIcon(): string { return DIFF_ICON; }
 
   async onOpen(): Promise<void> {
     this.contentEl.addClass('bmd-panel');
     const toolbar = this.contentEl.createDiv({ cls: 'bmd-toolbar' });
-    this.refreshButton = toolbar.createEl('button', { cls: 'bmd-refresh', text: t('刷新'), attr: { type: 'button', 'aria-label': t('重新读取 HEAD 并刷新差异') } });
+    this.refreshButton = toolbar.createEl('button', { cls: 'bmd-refresh', text: t('Refresh'), attr: { type: 'button', 'aria-label': t('Check HEAD and refresh the diff') } });
     this.refreshButton.addEventListener('click', () => { void this.refreshCurrent(); });
     this.navigationEl = toolbar.createDiv({ cls: 'bmd-navigation', attr: { role: 'group' } });
     this.previous = this.navigationEl.createEl('button', { cls: 'bmd-previous bmd-icon-button', attr: { type: 'button' } });
@@ -110,19 +119,6 @@ export class DiffPanel extends ItemView {
       if (this.pendingRender && !this.hasTextSelection()) this.render();
     });
     this.register(this.host.store.subscribe((path) => { if (path === this.path) this.render(); }));
-    this.register(onLanguageChange(() => {
-      this.summaryKey = undefined;
-      this.localizeToolbar();
-      this.updateRefreshButton();
-      if (this.feedbackKey) this.feedback.setText(t(this.feedbackKey));
-      this.items.forEach((item, index) => this.localizeItem(item, index));
-      this.cards.forEach((card) => {
-        this.localizeCard(card);
-        card.hunk.rows.forEach((row, i) => localizeHighlightedText(card.rows[i]!.querySelector<HTMLElement>('.bmd-row-text')!, row));
-      });
-      if (this.rendered && !this.cards.length) this.renderEmptyState();
-      this.render();
-    }));
     this.setFile(this.host.currentPath());
   }
 
@@ -140,25 +136,25 @@ export class DiffPanel extends ItemView {
     if (!this.path || this.refreshRequest) return;
     const request = this.refreshRequest = Symbol();
     this.updateRefreshButton();
-    this.setFeedback('正在检查 Git 基准…');
+    this.setFeedback('Checking the Git baseline…');
     try {
       await this.host.refresh(this.path);
-      if (this.refreshRequest === request) this.setFeedback(this.pendingRender ? '内容已更新；结束文本选择后刷新展示。' : '已刷新 Git 基准。');
+      if (this.refreshRequest === request) this.setFeedback(this.pendingRender ? 'Content has changed. Finish selecting text to update the view.' : 'Git baseline refreshed.');
     } catch (error) {
       if (this.refreshRequest === request) {
         this.feedbackKey = undefined;
-        this.feedback.setText(error instanceof Error ? error.message : t('刷新失败，请重试。'));
+        this.feedback.setText(error instanceof Error ? error.message : t('Refresh failed. Please try again.'));
       }
     } finally {
       if (this.refreshRequest === request) { this.refreshRequest = undefined; this.updateRefreshButton(); }
     }
   }
 
-  private setFeedback(key: MessageKey): void { this.feedbackKey = key; this.feedback.setText(t(key)); }
+  private setFeedback(key: string): void { this.feedbackKey = key; this.feedback.setText(t(key)); }
 
   private localizeToolbar(): void {
-    this.navigationEl.setAttribute('aria-label', t('变更导航'));
-    for (const [button, key] of [[this.previous, '上一处'], [this.next, '下一处'], [this.helpButton, '阅读说明'], [this.refreshButton, '重新读取 HEAD 并刷新差异']] as const) {
+    this.navigationEl.setAttribute('aria-label', t('Change navigation'));
+    for (const [button, key] of [[this.previous, 'Previous'], [this.next, 'Next'], [this.helpButton, 'Reading guide'], [this.refreshButton, 'Check HEAD and refresh the diff']] as const) {
       button.setAttribute('aria-label', t(key));
       button.title = t(key);
     }
@@ -166,7 +162,7 @@ export class DiffPanel extends ItemView {
 
   private updateRefreshButton(): void {
     this.refreshButton.disabled = !this.path || !!this.refreshRequest;
-    this.refreshButton.setText(t(this.refreshRequest ? '刷新中…' : '刷新'));
+    this.refreshButton.setText(t(this.refreshRequest ? 'Refreshing…' : 'Refresh'));
     this.refreshButton.setAttribute('aria-busy', String(!!this.refreshRequest));
   }
 
@@ -226,8 +222,8 @@ export class DiffPanel extends ItemView {
   }
 
   private updateProgress(): void {
-    const progress = t('改动 {index} / {total}', { index: this.items.length ? this.selected + 1 : 0, total: this.items.length });
-    const label = this.items.length ? progress : t('0 处变更');
+    const progress = t('Change {index} / {total}', { index: this.items.length ? this.selected + 1 : 0, total: this.items.length });
+    const label = this.items.length ? progress : t('No changes');
     this.progress.setText(progress);
     this.progress.setAttribute('aria-label', label);
     this.progress.title = label;
@@ -257,10 +253,12 @@ export class DiffPanel extends ItemView {
     this.contentEl.style.setProperty('--bmd-font-size', `${settings.fontSize}px`);
     this.contentEl.toggleClass('bmd-no-inline-highlights', !settings.inlineHighlights);
     this.contentEl.toggleClass('bmd-hide-whitespace', !settings.showWhitespace);
+    this.contentEl.toggleClass('bmd-words-plain', settings.diffStyle === 'words-plain');
+    this.contentEl.toggleClass('bmd-words-color', settings.diffStyle === 'words-color');
     const state = this.path ? this.host.store.get(this.path) : undefined;
     if (state?.status === 'ready' && this.rendered && state !== this.rendered && this.hasTextSelection()) {
       this.pendingRender = true;
-      this.setFeedback('内容已更新；结束文本选择后刷新展示。');
+      this.setFeedback('Content has changed. Finish selecting text to update the view.');
       for (const item of this.items) { item.revert.disabled = true; item.jump.disabled = true; }
       this.updateProgress(); return;
     }
@@ -270,30 +268,40 @@ export class DiffPanel extends ItemView {
       this.body.empty(); this.summaryKey = undefined;
       this.summary.empty();
       if (this.path) this.renderFileInfo(this.path);
-      this.summary.createDiv({ cls: 'bmd-message', text: !this.path ? t('打开一个 Markdown 文档以查看 Git 差异。') : state?.status === 'error' ? state.message : t('正在读取 Git…') });
+      this.summary.createDiv({ cls: 'bmd-message', text: !this.path ? t('Open a Markdown note to view its Git diff.') : state?.status === 'error' ? state.message : t('Reading Git…') });
       this.updateProgress(); return;
     }
     const digits = String(Math.max(state.diff.lineCount, state.diff.lineCount - state.diff.added + state.diff.deleted)).length;
     this.contentEl.style.setProperty('--bmd-line-digits', `${Math.max(3, digits)}ch`);
-    if (state !== this.rendered) this.reconcile(state);
-    const summaryKey = JSON.stringify([this.path, state.baseline.head, state.baseline.isNew, state.diff.added, state.diff.deleted, settings.inlineHighlights, settings.showWhitespace, this.cards.some((card) => card.limited)]);
+    if (state !== this.rendered || settings.diffStyle !== this.renderedStyle) this.reconcile(state);
+    const target = state.baseline.target;
+    const summaryKey = JSON.stringify([this.path, state.baseline.head, state.baseline.isNew, target?.hash, target?.path, state.diff.added, state.diff.deleted, settings.inlineHighlights, settings.showWhitespace, this.cards.some((card) => card.limited)]);
     if (summaryKey !== this.summaryKey) {
       this.summaryKey = summaryKey; this.summary.empty();
       const heading = this.summary.createDiv({ cls: 'bmd-summary-heading' });
       this.renderFileInfo(state.path, heading);
       const base = this.summary.createDiv({ cls: 'bmd-base' });
-      const reference = base.createSpan({ cls: 'bmd-baseline-ref' });
-      reference.createSpan({ text: 'HEAD' });
-      reference.createEl('code', { cls: 'bmd-ref', text: state.baseline.head?.slice(0, 8) ?? t('尚无提交'), attr: { title: state.baseline.head ?? t('尚无提交') } });
-      base.createSpan({ cls: 'bmd-base-arrow', text: '→', attr: { 'aria-hidden': 'true' } });
-      base.createSpan({ text: t('当前内容') });
-      if (state.baseline.isNew) base.createSpan({ cls: 'bmd-new-file', text: t('新纳入文件') });
-      if (state.diff.added || state.diff.deleted) {
-        const stats = heading.createDiv({ cls: 'bmd-stats', attr: { role: 'group', 'aria-label': t('新增 {added} 行，删除 {deleted} 行', { added: state.diff.added, deleted: state.diff.deleted }) } });
-        if (state.diff.added) stats.createSpan({ cls: 'bmd-stat-added', text: `+${state.diff.added}`, attr: { title: t('+{count} 新增', { count: state.diff.added }) } });
-        if (state.diff.deleted) stats.createSpan({ cls: 'bmd-stat-deleted', text: `−${state.diff.deleted}`, attr: { title: t('−{count} 删除', { count: state.diff.deleted }) } });
+      const reference = base.createEl('button', { cls: 'bmd-baseline-ref', attr: { type: 'button', 'aria-haspopup': 'dialog' } });
+      reference.title = t('Choose the comparison base: HEAD or an earlier commit');
+      reference.setAttribute('aria-label', reference.title);
+      reference.addEventListener('click', () => this.host.chooseBaseline(state.path));
+      reference.createSpan({ text: target ? t('Commit') : 'HEAD' });
+      reference.createEl('code', { cls: 'bmd-ref', text: state.baseline.head?.slice(0, 8) ?? t('no commits yet'), attr: { title: state.baseline.head ?? t('no commits yet') } });
+      if (target) {
+        const details = [target.subject, target.path !== undefined && !state.path.endsWith(target.path) ? target.path : undefined].filter(Boolean).join(' · ');
+        if (details) base.createSpan({ cls: 'bmd-baseline-subject', text: details, attr: { title: details } });
+        const reset = base.createEl('button', { cls: 'bmd-baseline-reset', text: t('Back to HEAD'), attr: { type: 'button' } });
+        reset.addEventListener('click', () => this.host.resetBaseline(state.path));
       }
-      if (this.cards.some((card) => card.limited)) this.summary.createDiv({ cls: 'bmd-hint', text: t('部分变更较大，已回退为整行高亮；完整增删内容仍保留。') });
+      base.createSpan({ cls: 'bmd-base-arrow', text: '→', attr: { 'aria-hidden': 'true' } });
+      base.createSpan({ text: t('Current content') });
+      if (state.baseline.isNew) base.createSpan({ cls: 'bmd-new-file', text: t('Newly tracked') });
+      if (state.diff.added || state.diff.deleted) {
+        const stats = heading.createDiv({ cls: 'bmd-stats', attr: { role: 'group', 'aria-label': t('{added} added lines, {deleted} deleted lines', { added: state.diff.added, deleted: state.diff.deleted }) } });
+        if (state.diff.added) stats.createSpan({ cls: 'bmd-stat-added', text: `+${state.diff.added}`, attr: { title: t('+{count} added', { count: state.diff.added }) } });
+        if (state.diff.deleted) stats.createSpan({ cls: 'bmd-stat-deleted', text: `−${state.diff.deleted}`, attr: { title: t('−{count} deleted', { count: state.diff.deleted }) } });
+      }
+      if (this.cards.some((card) => card.limited)) this.summary.createDiv({ cls: 'bmd-hint', text: t('Some changes exceed the refinement budget and use whole-line highlights. All added and deleted content is retained.') });
     }
     this.updateProgress();
   }
@@ -311,11 +319,12 @@ export class DiffPanel extends ItemView {
     const empty = this.body.createDiv({ cls: 'bmd-empty', attr: { role: 'status' } });
     setIcon(empty.createSpan({ cls: 'bmd-empty-icon', attr: { 'aria-hidden': 'true' } }), 'check');
     const message = empty.createDiv();
-    message.createEl('h3', { cls: 'bmd-empty-title', text: t('与 HEAD 一致') });
-    message.createEl('p', { cls: 'bmd-empty-description', text: t('继续编辑此文档，差异会自动显示在这里。') });
+    message.createEl('h3', { cls: 'bmd-empty-title', text: t('Matches {base}', { base: baselineName(this.rendered?.baseline) }) });
+    message.createEl('p', { cls: 'bmd-empty-description', text: t('Keep editing this note. Changes will appear here automatically.') });
   }
 
   private reconcile(state: ReadyDiffState): void {
+    const style = this.host.settings().diffStyle;
     const scroll = this.body.scrollTop;
     const selectedItem = this.items[this.selected];
     const changesByRow = new Map<DiffRow, LineChange>();
@@ -324,26 +333,30 @@ export class DiffPanel extends ItemView {
     for (const card of this.cards) { const list = buckets.get(card.key) ?? []; list.push(card); buckets.set(card.key, list); }
     const plans = state.diff.hunks.map((hunk) => {
       // Coordinates may change without changing the source text or its highlighting.
-      const key = JSON.stringify(hunk.rows.map((row) => [row.kind, row.text, row.noNewline]));
+      const key = JSON.stringify([style, hunk.rows.map((row) => [row.kind, row.text, row.noNewline])]);
       return { hunk, key, card: buckets.get(key)?.shift() };
     });
-    const highlights = highlightHunks(plans.filter((plan) => !plan.card).map((plan) => plan.hunk));
+    const highlights = style === 'lines' ? highlightHunks(plans.filter((plan) => !plan.card).map((plan) => plan.hunk)) : { segments: new Map(), pairs: new Map(), limited: false };
+    const deadline = Date.now() + 80; // Word refinement shares one budget, like inline highlights.
     this.clearCurrentRow(); this.rowElements.clear(); this.rowPairs.clear();
     for (const unused of buckets.values()) for (const card of unused) card.element.remove();
     this.body.querySelector('.bmd-empty')?.remove();
     this.cards = plans.map(({ hunk, key, card }, index) => {
-      card ??= this.createCard(hunk, key, highlights, state, changesByRow);
+      card ??= style === 'lines' ? this.createCard(hunk, key, highlights, state, changesByRow) : this.createWordCard(hunk, key, style, deadline, state, changesByRow);
       card.hunk = hunk;
-      this.localizeCard(card);
+      this.localizeCard(card, state);
       for (const item of card.items) {
         item.change = changesByRow.get(hunk.rows[item.rowIndex]!)!;
         item.snapshot = state; item.revert.disabled = false; item.jump.disabled = false;
       }
+      for (const number of card.numbers) {
+        const oldLine = number.old === undefined ? '' : hunk.rows[number.old]!.oldLine?.toString() ?? '';
+        const newLine = number.new === undefined ? '' : hunk.rows[number.new]!.newLine?.toString() ?? '';
+        number.element.setAttribute('data-old-line', oldLine); number.element.setAttribute('data-new-line', newLine);
+        number.element.children[0]!.textContent = oldLine; number.element.children[1]!.textContent = newLine;
+      }
       hunk.rows.forEach((row, i) => {
-        const element = card.rows[i]!;
-        element.setAttribute('data-old-line', row.oldLine?.toString() ?? ''); element.setAttribute('data-new-line', row.newLine?.toString() ?? '');
-        element.children[0]!.textContent = row.oldLine?.toString() ?? ''; element.children[1]!.textContent = row.newLine?.toString() ?? '';
-        this.rowElements.set(row, element);
+        this.rowElements.set(row, card.rows[i]!);
         const pair = card.pairs.get(i);
         if (pair !== undefined) this.rowPairs.set(row, hunk.rows[pair]!);
       });
@@ -354,38 +367,39 @@ export class DiffPanel extends ItemView {
     this.items.forEach((item, index) => this.localizeItem(item, index));
     this.selected = Math.max(0, selectedItem && this.items.includes(selectedItem) ? this.items.indexOf(selectedItem) : Math.min(this.selected, this.items.length - 1));
     this.rendered = state;
+    this.renderedStyle = style;
     if (!this.cards.length) this.renderEmptyState();
     this.body.scrollTop = scroll;
     if (this.followedLine !== undefined) this.showLine(this.followedLine, false);
   }
 
-  private localizeCard(card: HunkCard): void {
+  private localizeCard(card: HunkCard, state = this.rendered): void {
     const current = card.hunk.rows.filter((row) => row.newLine !== null);
     const lines = current.length ? current.map((row) => row.newLine!) : card.hunk.rows.map((row) => row.oldLine!);
     const from = lines[0]!, to = lines[lines.length - 1]!;
     const range = current.length
-      ? t(from === to ? '当前 {from} 行' : '当前 {from}–{to} 行', { from, to })
-      : t(from === to ? 'HEAD {from} 行' : 'HEAD {from}–{to} 行', { from, to });
-    const label = t(card.items.length === 1 ? '{range} · 1 处改动' : '{range} · {count} 处改动', { range, count: card.items.length });
+      ? t(from === to ? 'Current line {from}' : 'Current lines {from}–{to}', { from, to })
+      : t(from === to ? '{base} line {from}' : '{base} lines {from}–{to}', { base: baselineName(state?.baseline), from, to });
+    const label = t(card.items.length === 1 ? '{range} · 1 change' : '{range} · {count} changes', { range, count: card.items.length });
     card.heading.setText(label);
-    card.heading.title = t('{label}：定位此区块的第一项改动', { label });
+    card.heading.title = t('{label}: Go to the first change in this block', { label });
     card.heading.setAttribute('aria-label', card.heading.title);
   }
 
   private localizeItem(item: ChangeItem, index: number): void {
-    const range = changeRange(item.change);
-    const label = t('改动 {index} · {range}', { index: index + 1, range });
+    const range = changeRange(item.change, baselineName(item.snapshot.baseline));
+    const label = t('Change {index} · {range}', { index: index + 1, range });
     item.element.setAttribute('aria-label', label);
-    item.jump.title = t('定位第 {index} 项改动：{range}', { index: index + 1, range });
+    item.jump.title = t('Reveal change {index} in the editor: {range}', { index: index + 1, range });
     item.jump.setAttribute('aria-label', item.jump.title);
-    item.revert.title = t('还原第 {index} 项：{range}', { index: index + 1, range });
+    item.revert.title = t('Restore change {index}: {range}', { index: index + 1, range });
     item.revert.setAttribute('aria-label', item.revert.title);
   }
 
   private createCard(hunk: DiffHunk, key: string, highlights: InlineHighlights, snapshot: ReadyDiffState, changesByRow: Map<DiffRow, LineChange>): HunkCard {
     const element = this.body.createDiv({ cls: 'bmd-diff-region' });
     const heading = element.createEl('h3', { cls: 'bmd-region-heading' }).createEl('button', { cls: 'bmd-region-jump', attr: { type: 'button' } });
-    const card: HunkCard = { key, element, heading, rows: [], pairs: new Map(), limited: highlights.limited, hunk, items: [] };
+    const card: HunkCard = { key, element, heading, rows: [], numbers: [], pairs: new Map(), limited: highlights.limited, hunk, items: [] };
     heading.addEventListener('click', () => this.activateChange(card.items[0]));
     const itemsByChange = new Map<LineChange, ChangeItem>();
     const lines = element.createDiv({ cls: 'bmd-lines' });
@@ -410,6 +424,7 @@ export class DiffPanel extends ItemView {
       }
       const line = parent.createDiv({ cls: `bmd-row bmd-row--${row.kind}` });
       card.rows[index] = line;
+      card.numbers.push({ element: line, old: index, new: index });
       const pair = highlights.pairs.get(row);
       if (pair) card.pairs.set(index, positions.get(pair)!);
       const oldNumber = line.createSpan({ cls: 'bmd-line-number', attr: { 'aria-hidden': 'true' } });
@@ -419,7 +434,62 @@ export class DiffPanel extends ItemView {
       line.createSpan({ cls: 'bmd-sign', text: row.kind === 'added' ? '+' : row.kind === 'deleted' ? '−' : ' ' });
       const text = line.createEl('code', { cls: 'bmd-row-text' });
       renderHighlightedText(text, row, highlights.segments.get(row)!);
-      if (row.noNewline) text.createSpan({ cls: 'bmd-no-newline', text: t(' ⏎ 无末尾换行') });
+      if (row.noNewline) text.createSpan({ cls: 'bmd-no-newline', text: t(' ⏎ No final newline') });
+    }
+    return card;
+  }
+
+  /** Word styles merge each change into display lines; items, jumps and restoration stay per change. */
+  private createWordCard(hunk: DiffHunk, key: string, style: Exclude<DiffStyle, 'lines'>, deadline: number, snapshot: ReadyDiffState, changesByRow: Map<DiffRow, LineChange>): HunkCard {
+    const element = this.body.createDiv({ cls: 'bmd-diff-region' });
+    const heading = element.createEl('h3', { cls: 'bmd-region-heading' }).createEl('button', { cls: 'bmd-region-jump', attr: { type: 'button' } });
+    const card: HunkCard = { key, element, heading, rows: [], numbers: [], pairs: new Map(), limited: false, hunk, items: [] };
+    heading.addEventListener('click', () => this.activateChange(card.items[0]));
+    const lines = element.createDiv({ cls: 'bmd-lines' });
+    const positions = new Map(hunk.rows.map((row, i) => [row, i]));
+    const createLine = (parent: HTMLElement, kind: string, sign: string) => {
+      const line = parent.createDiv({ cls: `bmd-row bmd-row--${kind} bmd-row--word` });
+      const numbers = [line.createSpan({ cls: 'bmd-line-number', attr: { 'aria-hidden': 'true' } }), line.createSpan({ cls: 'bmd-line-number', attr: { 'aria-hidden': 'true' } })] as const;
+      line.createSpan({ cls: 'bmd-sign', text: sign });
+      return { line, numbers, text: line.createEl('code', { cls: 'bmd-row-text' }) };
+    };
+    for (let start = 0; start < hunk.rows.length;) {
+      const row = hunk.rows[start]!;
+      const change = changesByRow.get(row);
+      if (!change) {
+        const { line, text } = createLine(lines, 'context', ' ');
+        renderWordLine(text, { kind: 'context', segments: row.text ? [{ text: row.text, kind: 'context' }] : [] }, style === 'words-plain' ? 'plain' : 'color');
+        if (row.noNewline) text.createSpan({ cls: 'bmd-no-newline', text: t(' ⏎ No final newline') });
+        card.rows[start] = line;
+        card.numbers.push({ element: line, old: start, new: start });
+        start++;
+        continue;
+      }
+      let end = start;
+      while (end < hunk.rows.length && changesByRow.get(hunk.rows[end]!) === change) end++;
+      const section = lines.createEl('section', { cls: 'bmd-change' });
+      const jump = section.createEl('button', { cls: 'bmd-line-number bmd-change-title', attr: { type: 'button' } });
+      const revert = section.createEl('button', { cls: 'bmd-revert', attr: { type: 'button' } });
+      setIcon(revert.createSpan({ attr: { 'aria-hidden': 'true' } }), 'undo-2');
+      const item: ChangeItem = { element: section, jump, revert, rowIndex: start, change, snapshot };
+      jump.addEventListener('click', () => this.activateChange(item));
+      revert.addEventListener('click', () => this.host.revert(item.snapshot, item.change));
+      card.items.push(item);
+      const words = wordDiffLines(hunk.rows.slice(start, end), deadline);
+      card.limited ||= words.limited;
+      words.lines.forEach((word, i) => {
+        const { line, numbers, text } = createLine(section, word.kind, word.kind === 'added' ? '+' : word.kind === 'deleted' ? '−' : word.kind === 'modified' ? '~' : ' ');
+        renderWordLine(text, word, style === 'words-plain' ? 'plain' : 'color');
+        const old = word.oldRow && positions.get(word.oldRow), current = word.newRow && positions.get(word.newRow);
+        if (old !== undefined) card.rows[old] = line;
+        if (current !== undefined) card.rows[current] = line;
+        if ((word.newRow ?? word.oldRow)?.noNewline) text.createSpan({ cls: 'bmd-no-newline', text: t(' ⏎ No final newline') });
+        card.numbers.push({ element: line, old, new: current });
+        if (i === 0) numbers[current !== undefined || old === undefined ? 1 : 0].replaceWith(jump);
+      });
+      // Every row of the change still resolves to a display line for navigation.
+      for (let i = start; i < end; i++) card.rows[i] ??= section.querySelector<HTMLElement>('.bmd-row')!;
+      start = end;
     }
     return card;
   }

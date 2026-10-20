@@ -26,17 +26,17 @@ describe('device-local acceptance storage', () => {
     await openStore();
     const alias = join(root, 'alias');
     await symlink(vault, alias, process.platform === 'win32' ? 'junction' : 'dir');
-    await expect(ReviewStorage.open(alias, data)).rejects.toThrow('占用');
+    await expect(ReviewStorage.open(alias, data)).rejects.toThrow('in use');
   });
 
   it('stops when its lock is replaced and does not remove the replacement on close', async () => {
     const store = await openStore();
     const path = join(store.directory, 'writer.lock');
     await writeFile(path, 'another owner');
-    await expect(store.beginInitialization([])).rejects.toThrow('写锁');
+    await expect(store.beginInitialization([])).rejects.toThrow('lock changed');
     await store.close();
     expect(await readFile(path, 'utf8')).toBe('another owner');
-    await expect(openStore()).rejects.toThrow('占用');
+    await expect(openStore()).rejects.toThrow('in use');
   });
 
   it('rejects malformed phase values rather than coercing them into a valid state', async () => {
@@ -47,7 +47,7 @@ describe('device-local acceptance storage', () => {
     const malformed = original.replace('"phase":"new"', '"phase":["new"]');
     expect(malformed).not.toBe(original);
     await writeFile(path, malformed);
-    await expect(openStore()).rejects.toThrow('认可记录');
+    await expect(openStore()).rejects.toThrow('acceptance record');
   });
 
   it('initializes once and treats later or offline-created files as pending, even before they were opened', async () => {
@@ -55,7 +55,7 @@ describe('device-local acceptance storage', () => {
     await store.beginInitialization(['unopened.md']);
     await store.initializeDocument('unopened.md', 'recognized\n');
     await store.finishInitialization();
-    await expect(store.beginInitialization(['different.md'])).rejects.toThrow('初始化');
+    await expect(store.beginInitialization(['different.md'])).rejects.toThrow('initialization state');
     await store.close(); store = await openStore();
     const existing = await store.document('unopened.md');
     expect(existing.snapshot('offline changes\n').record.content).toBe('recognized\n');
@@ -69,8 +69,8 @@ describe('device-local acceptance storage', () => {
     let store = await openStore();
     await store.beginInitialization(['a.md', 'b.md']);
     await store.initializeDocument('a.md', 'original a\n');
-    await expect(store.finishInitialization()).rejects.toThrow('尚未完成');
-    await expect(store.document('b.md')).rejects.toThrow('尚未完成');
+    await expect(store.finishInitialization()).rejects.toThrow('incomplete');
+    await expect(store.document('b.md')).rejects.toThrow('incomplete');
     await store.close(); store = await openStore();
     expect(store.pendingPaths).toEqual(['b.md']);
     await store.initializeDocument('a.md', 'later a\n');
@@ -100,7 +100,7 @@ describe('device-local acceptance storage', () => {
     const recordPath = join(store.directory, (await readdir(store.directory)).find((name) => name.startsWith('record-'))!);
     await store.close();
     await writeFile(recordPath, 'broken json'); store = await openStore();
-    await expect(store.document('a.md')).rejects.toThrow('认可记录');
+    await expect(store.document('a.md')).rejects.toThrow('acceptance record');
     await rm(recordPath);
     await expect(store.document('a.md')).rejects.toThrow();
     expect(store.phase).toBe('ready');
@@ -112,7 +112,7 @@ describe('device-local acceptance storage', () => {
     const original = await readFile(indexPath);
     await store.close();
     await writeFile(indexPath, '{broken');
-    await expect(openStore()).rejects.toThrow('认可记录');
+    await expect(openStore()).rejects.toThrow('acceptance record');
     await rm(indexPath);
     await expect(openStore()).rejects.toThrow();
     await writeFile(indexPath, original);
@@ -121,7 +121,7 @@ describe('device-local acceptance storage', () => {
 
   it('has one writer per vault while isolating different vaults in the same data root', async () => {
     const first = await openStore();
-    await expect(openStore()).rejects.toThrow('占用');
+    await expect(openStore()).rejects.toThrow('in use');
     const anotherVault = join(root, 'other-vault'); await mkdir(anotherVault);
     const other = await ReviewStorage.open(anotherVault, data); stores.push(other);
     expect(other.directory).not.toBe(first.directory);
@@ -131,19 +131,19 @@ describe('device-local acceptance storage', () => {
   });
 
   it('refuses storage inside the vault, a Git worktree, or a junction into the vault', async () => {
-    await expect(ReviewStorage.open(vault, vault)).rejects.toThrow('之外');
+    await expect(ReviewStorage.open(vault, vault)).rejects.toThrow('outside');
     await writeFile(join(data, '.git'), 'gitdir: somewhere');
-    await expect(openStore()).rejects.toThrow('之外');
+    await expect(openStore()).rejects.toThrow('outside');
     await rm(join(data, '.git'));
     const alias = join(root, 'vault-alias');
     await symlink(vault, alias, process.platform === 'win32' ? 'junction' : 'dir');
-    await expect(ReviewStorage.open(vault, alias)).rejects.toThrow('之外');
+    await expect(ReviewStorage.open(vault, alias)).rejects.toThrow('outside');
   });
 
   it('rejects escaped paths before initialization and persists special Markdown names safely', async () => {
     const store = await openStore();
     for (const path of ['../a.md', '/a.md', 'C:\\a.md', 'folder//a.md', './a.md', 'a.txt']) {
-      await expect(store.beginInitialization([path])).rejects.toThrow('路径');
+      await expect(store.beginInitialization([path])).rejects.toThrow('path');
       expect(store.phase).toBe('new');
     }
     await store.beginInitialization([]); await store.finishInitialization();
@@ -162,7 +162,7 @@ describe('device-local acceptance storage', () => {
     const original = await readFile(recordPath);
     await writeFile(recordPath, '{}');
     const snapshot = doc.snapshot('new\n');
-    await expect(doc.acceptAll(snapshot, () => 'new\n')).rejects.toThrow('认可记录');
+    await expect(doc.acceptAll(snapshot, () => 'new\n')).rejects.toThrow('acceptance record');
     expect(doc.snapshot('new\n').record.content).toBe('');
     await writeFile(recordPath, original);
     await doc.acceptAll(snapshot, () => 'new\n');
@@ -179,7 +179,7 @@ describe('device-local acceptance storage', () => {
     const snapshot = doc.snapshot('pending\n');
     await expect(doc.reject(snapshot, snapshot.diff.changes[0]!, {
       getValue: () => 'pending\n', apply: () => { throw new Error('unexpected edit'); },
-    })).rejects.toThrow('关闭');
+    })).rejects.toThrow('closed');
   });
 
   it('refuses a per-vault storage directory that has become a Git worktree', async () => {
@@ -187,7 +187,7 @@ describe('device-local acceptance storage', () => {
     const directory = store.directory;
     await store.close();
     await mkdir(join(directory, '.git'));
-    await expect(openStore()).rejects.toThrow('之外');
+    await expect(openStore()).rejects.toThrow('outside');
   });
 
   it('invalidates document actions when the storage owner closes', async () => {
@@ -199,7 +199,7 @@ describe('device-local acceptance storage', () => {
     let applied = false;
     await expect(doc.reject(snapshot, snapshot.diff.changes[0]!, {
       getValue: () => 'pending\n', apply: () => { applied = true; },
-    })).rejects.toThrow('关闭');
+    })).rejects.toThrow('closed');
     expect(applied).toBe(false);
   });
 

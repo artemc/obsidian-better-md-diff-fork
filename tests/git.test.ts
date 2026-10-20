@@ -12,7 +12,7 @@ async function git(...args: string[]): Promise<string> {
   return (await exec('git', args, { cwd: root, encoding: 'utf8', windowsHide: true })).stdout;
 }
 async function note(path: string, text: string): Promise<void> { await writeFile(join(root, path), text, 'utf8'); }
-async function commit(): Promise<void> { await git('add', '--all'); await git('commit', '-qm', '测试提交'); }
+async function commit(): Promise<void> { await git('add', '--all'); await git('commit', '-qm', 'test commit'); }
 
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'better-md-diff-'));
@@ -68,7 +68,7 @@ describe('read-only Git HEAD baseline', () => {
   it('honors configured limits in cached and independent restoration reads', async () => {
     const text = '中文'.repeat(450_000);
     await note('large.md', text); await commit();
-    await expect(readGitBaseline(root, 'large.md')).rejects.toThrow('上限');
+    await expect(readGitBaseline(root, 'large.md')).rejects.toThrow('limit');
     const limits = { maxFileMiB: 3, maxLines: 30_000 };
     const reader = new GitBaselineReader(root, 'git', limits);
     try {
@@ -134,7 +134,7 @@ describe('read-only Git HEAD baseline', () => {
     const blob = (await git('rev-parse', 'HEAD:note.md')).trim();
     await git('update-index', '--add', '--cacheinfo', `120000,${blob},linked.md`);
     await expect(readGitBaseline(root, 'linked.md')).rejects.toMatchObject({
-      reason: 'read', message: '暂不支持符号链接或子模块文件。',
+      reason: 'read', message: 'Symlinks and submodule files are not supported.',
     });
   });
 
@@ -189,5 +189,49 @@ describe('read-only Git HEAD baseline', () => {
     await note('note.md', 'main\n'); await commit();
     await expect(git('merge', '--no-edit', 'conflict')).rejects.toBeDefined();
     await expect(readGitBaseline(root, 'note.md')).rejects.toMatchObject({ reason: 'conflict' });
+  });
+});
+
+describe('comparison with an earlier commit', () => {
+  async function commitAs(message: string): Promise<void> { await git('add', '--all'); await git('commit', '-qm', message); }
+
+  it('lists commits that changed a document, following renames, and reads each version', async () => {
+    await mkdir(join(root, 'notes'));
+    await note('notes/old.md', 'v1\n'); await commitAs('first version');
+    await note('other.md', 'unrelated\n'); await commitAs('unrelated');
+    await note('notes/old.md', 'v2\n'); await commitAs('second: edit');
+    await git('mv', 'notes/old.md', 'notes/新 名.md'); await commitAs('rename');
+    await note('notes/新 名.md', 'v3\n'); await commitAs('third');
+    await note('notes/新 名.md', 'working\n');
+    const reader = new GitBaselineReader(root);
+    try {
+      const history = await reader.history('notes/新 名.md');
+      expect(history.map((commit) => [commit.subject, commit.path])).toEqual([
+        ['third', 'notes/新 名.md'], ['rename', 'notes/新 名.md'], ['second: edit', 'notes/old.md'], ['first version', 'notes/old.md'],
+      ]);
+      expect(history[0]).toMatchObject({ author: 'Diff Test', hash: expect.stringMatching(/^[0-9a-f]{40,64}$/) });
+      expect(history[0]!.time).toBeGreaterThan(Date.UTC(2020, 0));
+      const first = await reader.read('notes/新 名.md', history[3]);
+      expect(first).toMatchObject({ content: 'v1\n', head: history[3]!.hash, isNew: false, target: history[3] });
+      // Batches resolve targets per document; other documents keep comparing with HEAD.
+      const read = reader.batch(['notes/新 名.md', 'other.md'], (path) => path === 'other.md' ? undefined : history[2]);
+      expect((await read('notes/新 名.md')).content).toBe('v2\n');
+      expect(await read('other.md')).toEqual({ content: 'unrelated\n', head: expect.any(String), isNew: false });
+      expect((await readGitBaseline(root, 'notes/新 名.md', 'git', undefined, undefined, history[1])).content).toBe('v2\n');
+      expect(await reader.read('notes/新 名.md')).not.toHaveProperty('target');
+    } finally { reader.dispose(); }
+  });
+
+  it('returns no history before the first commit and rejects unknown or option-like targets', async () => {
+    await note('note.md', 'staged\n'); await git('add', 'note.md');
+    const reader = new GitBaselineReader(root);
+    try {
+      expect(await reader.history('note.md')).toEqual([]);
+      await commitAs('first');
+      await expect(reader.read('note.md', { hash: 'f'.repeat(40), path: 'note.md' })).rejects.toMatchObject({ message: 'The selected commit does not exist. Choose the comparison base again.' });
+      await expect(reader.read('note.md', { hash: '--output=/tmp/x', path: 'note.md' })).rejects.toMatchObject({ message: 'The selected commit does not exist. Choose the comparison base again.' });
+      const [commit] = await reader.history('note.md');
+      expect(await reader.read('note.md', { hash: commit!.hash, path: 'missing.md' })).toMatchObject({ content: '', isNew: true });
+    } finally { reader.dispose(); }
   });
 });

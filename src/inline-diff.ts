@@ -139,6 +139,7 @@ function refineLine(before: DiffRow, after: DiffRow, result: InlineHighlights, d
 export function renderHighlightedText(container: HTMLElement, row: DiffRow, segments: readonly InlineSegment[]): void {
   container.replaceChildren();
   container.toggleAttribute('data-source-empty', !row.text);
+  container.dataset.kind = row.kind;
   const document = container.ownerDocument;
   for (const segment of segments) {
     if (!segment.changed || row.kind === 'context') {
@@ -147,14 +148,7 @@ export function renderHighlightedText(container: HTMLElement, row: DiffRow, segm
     }
     const mark = container.createEl('mark');
     mark.className = `bmd-inline-change bmd-inline-${row.kind}`;
-    for (const piece of segment.text.match(/ +|\t|[^ \t]+/g) ?? []) {
-      if (piece.startsWith(' ') || piece === '\t') {
-        const whitespace = mark.createSpan();
-        whitespace.className = 'bmd-inline-whitespace';
-        whitespace.textContent = piece;
-        whitespace.dataset.symbol = piece === '\t' ? '→' : '·'.repeat(piece.length);
-      } else mark.append(document.createTextNode(piece));
-    }
+    appendInlineText(mark, segment.text);
   }
   if (!row.text) {
     container.append(document.createTextNode(' '));
@@ -162,17 +156,30 @@ export function renderHighlightedText(container: HTMLElement, row: DiffRow, segm
       container.classList.add('bmd-empty-line');
     }
   }
-  localizeHighlightedText(container, row);
+  localizeHighlightedText(container);
+}
+
+/** Changed text with visible-on-demand spaces and tabs inside a highlight. */
+export function appendInlineText(mark: HTMLElement, text: string): void {
+  for (const piece of text.match(/ +|\t|[^ \t]+/g) ?? []) {
+    if (piece.startsWith(' ') || piece === '\t') {
+      const whitespace = mark.createSpan();
+      whitespace.className = 'bmd-inline-whitespace';
+      whitespace.textContent = piece;
+      whitespace.dataset.symbol = piece === '\t' ? '→' : '·'.repeat(piece.length);
+    } else mark.append(mark.ownerDocument.createTextNode(piece));
+  }
 }
 
 /** Update only UI metadata; source text nodes and copy selections are never replaced. */
-export function localizeHighlightedText(container: HTMLElement, row: DiffRow): void {
-  const added = row.kind === 'added';
-  container.querySelectorAll<HTMLElement>('mark').forEach((mark) => { mark.title = t(added ? '新增内容' : '删除内容'); });
+export function localizeHighlightedText(container: HTMLElement): void {
+  const isAdded = (element: Element) => !!element.closest('mark')?.classList.contains('bmd-inline-added');
+  container.querySelectorAll<HTMLElement>('mark').forEach((mark) => { mark.title = t(isAdded(mark) ? 'Added text' : 'Deleted text'); });
   container.querySelectorAll<HTMLElement>('.bmd-inline-whitespace').forEach((whitespace) => {
-    whitespace.title = t(whitespace.textContent === '\t' ? (added ? '新增制表符' : '删除制表符') : (added ? '新增空格' : '删除空格'));
+    const added = isAdded(whitespace);
+    whitespace.title = t(whitespace.textContent === '\t' ? (added ? 'Added tab' : 'Deleted tab') : (added ? 'Added spaces' : 'Deleted spaces'));
   });
-  if (!row.text && row.kind !== 'context') { container.title = t(added ? '新增空行' : '删除空行'); container.dataset.emptyLabel = t('空行'); }
+  if (container.classList.contains('bmd-empty-line')) { container.title = t(container.dataset.kind === 'added' ? 'Added empty line' : 'Deleted empty line'); container.dataset.emptyLabel = t('Empty line'); }
   const newline = container.querySelector('.bmd-no-newline');
-  if (newline) newline.textContent = t(' ⏎ 无末尾换行');
+  if (newline) newline.textContent = t(' ⏎ No final newline');
 }

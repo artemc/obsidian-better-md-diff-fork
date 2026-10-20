@@ -1,17 +1,17 @@
 {
-  "name": "better-md-diff",
+  "name": "better-md-diff-fork",
   "version": "0.4.1",
   "private": true,
-  "description": "Markdown Git HEAD diffs with paired review and per-change restoration for Obsidian.",
+  "description": "Markdown diffs against Git HEAD or an earlier commit, with line or word views and per-change restoration for Obsidian.",
   "license": "MIT",
-  "author": "kamacheng",
-  "homepage": "https://github.com/kamacheng/better-md-diff",
+  "author": "artemc",
+  "homepage": "https://github.com/artemc/obsidian-better-md-diff-fork",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kamacheng/better-md-diff.git"
+    "url": "git+https://github.com/artemc/obsidian-better-md-diff-fork.git"
   },
   "bugs": {
-    "url": "https://github.com/kamacheng/better-md-diff/issues"
+    "url": "https://github.com/artemc/obsidian-better-md-diff-fork/issues"
   },
   "engines": {
     "node": "^22.12.0 || >=24.0.0"
@@ -23,7 +23,8 @@
     "test": "vitest run",
     "lint": "eslint src --max-warnings 0",
     "check": "npm run lint && npm run test && npm run build && npm run check:release",
-    "check:release": "node scripts/check-release.mjs"
+    "check:release": "node scripts/check-release.mjs",
+    "version": "node version-bump.mjs && git add manifest.json versions.json"
   },
   "dependencies": {
     "diff": "^9.0.0"

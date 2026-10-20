@@ -33,6 +33,16 @@ class SliderControl extends InputControl {
   }
 }
 
+class DropdownControl {
+  selectEl: HTMLSelectElement;
+  constructor(parent: HTMLElement) { this.selectEl = parent.ownerDocument.createElement('select'); parent.append(this.selectEl); }
+  addOption(value: string, display: string): this { this.selectEl.append(new Option(display, value)); return this; }
+  setValue(value: string): this { this.selectEl.value = value; return this; }
+  onChange(callback: (value: string) => unknown): this {
+    this.selectEl.addEventListener('change', () => { callback(this.selectEl.value); }); return this;
+  }
+}
+
 export class ButtonControl {
   buttonEl: HTMLButtonElement;
   constructor(parent: HTMLElement) { this.buttonEl = parent.ownerDocument.createElement('button'); parent.append(this.buttonEl); }
@@ -60,4 +70,5 @@ export class Setting {
   addSlider(callback: (control: SliderControl) => unknown): this { callback(new SliderControl(this.settingEl, 'range')); return this; }
   addText(callback: (control: InputControl) => unknown): this { callback(new InputControl(this.settingEl, 'text')); return this; }
   addButton(callback: (control: ButtonControl) => unknown): this { callback(new ButtonControl(this.settingEl)); return this; }
+  addDropdown(callback: (control: DropdownControl) => unknown): this { callback(new DropdownControl(this.settingEl)); return this; }
 }

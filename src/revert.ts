@@ -1,10 +1,10 @@
 import { normalizeText, type LineChange } from './diff';
-import type { GitBaseline } from './git';
+import { sameTarget, type GitBaseline } from './git';
 import type { ReadyDiffState } from './store';
-import { LocalizedError, type MessageKey } from './i18n';
+import { LocalizedError } from './i18n';
 
 export interface RevertEdit { from: number; to: number; text: string }
-const staleMessage = '文档或 HEAD 已变化，请刷新差异后重新选择要还原的区块。';
+const staleMessage = 'The document or comparison base changed. Refresh the diff and select the change again.';
 
 /** Only an original, contiguous change is a write target; display hunks are never accepted. */
 export function prepareChangeRevert(snapshot: ReadyDiffState, change: LineChange, current: string, baseline: GitBaseline): RevertEdit[] {
@@ -12,6 +12,7 @@ export function prepareChangeRevert(snapshot: ReadyDiffState, change: LineChange
     || normalizeText(current) !== snapshot.current
     || baseline.head !== snapshot.baseline.head
     || baseline.isNew !== snapshot.baseline.isNew
+    || !sameTarget(baseline, snapshot.baseline)
     || normalizeText(baseline.content) !== normalizeText(snapshot.baseline.content)) {
     throw new LocalizedError(staleMessage);
   }
@@ -19,7 +20,7 @@ export function prepareChangeRevert(snapshot: ReadyDiffState, change: LineChange
 }
 
 /** Callers validate snapshot ownership and freshness before preparing the single edit. */
-export function prepareTextRevert(change: LineChange, current: string, baselineContent: string, staleMessage: MessageKey): RevertEdit[] {
+export function prepareTextRevert(change: LineChange, current: string, baselineContent: string, staleMessage: string): RevertEdit[] {
   const currentLines = current.match(/[^\n]*\n|[^\n]+$/g) ?? [];
   const oldLines = baselineContent.match(/[^\n]*\n|[^\n]+$/g) ?? [];
   const offsets = [0];

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile, stat } from 'node:fs/promises';
+import { join } from 'node:path';
 
 const json = async (file) => JSON.parse(await readFile(file, 'utf8'));
 const manifest = await json('manifest.json');
@@ -34,7 +35,23 @@ for (const license of ['LICENSE', 'node_modules/diff/LICENSE']) {
   assert(bundle.includes((await readFile(license, 'utf8')).trim()), `Missing bundled license: ${license}`);
 }
 const readme = await readFile('README.md', 'utf8');
-assert(readme.includes('(README.zh-CN.md)'), 'Missing Chinese README link');
-assert(readme.includes('## Installation') && readme.includes('## Usage'), 'Keep English quick-start sections discoverable by community scans');
-assert((await readFile('README.zh-CN.md', 'utf8')).includes('(README.md)'), 'Missing English README link');
+assert(readme.includes('## Installation') && readme.includes('## Usage'), 'Keep the README installation and usage sections');
+
+// Everything shipped or documented is English. Tests and host scripts keep deliberate Unicode fixtures.
+const nonEnglish = /[\p{Script=Han}\p{Script=Cyrillic}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
+const textFiles = /\.(?:ts|mjs|js|json|css|md|yml)$/;
+async function* walk(path) {
+  const entry = await stat(path);
+  if (entry.isFile()) { yield path; return; }
+  for (const name of await readdir(path)) yield* walk(join(path, name));
+}
+const languageRoots = ['src', 'docs', '.github', 'README.md', 'CONTRIBUTING.md', 'manifest.json', 'package.json', 'versions.json', 'styles.css',
+  'esbuild.config.mjs', 'eslint.config.mjs', 'version-bump.mjs', 'scripts/check-release.mjs', 'scripts/check-large-documents.mjs'];
+for (const root of languageRoots) {
+  for await (const file of walk(root)) {
+    if (!textFiles.test(file)) continue;
+    const line = (await readFile(file, 'utf8')).split('\n').findIndex((text) => nonEnglish.test(text));
+    assert(line < 0, `Non-English text in ${file}:${line + 1}; the project is English only`);
+  }
+}
 console.log(`Release ${manifest.version} validated. Use tag ${manifest.version} (without a v prefix).`);

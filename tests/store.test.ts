@@ -11,6 +11,20 @@ function deferred<T>() {
 }
 
 describe('diff snapshot store', () => {
+  it('publishes a new snapshot when only the comparison target changes', async () => {
+    const target = { hash: 'abc', path: 'a.md' };
+    let next: GitBaseline = baseline;
+    const store = new DiffStore(async () => next);
+    const listener = vi.fn();
+    store.subscribe(listener);
+    await store.refresh('a.md', 'new\n');
+    next = { ...baseline, target };
+    await store.refresh('a.md', 'new\n', true);
+    expect(listener).toHaveBeenCalledTimes(2);
+    const state = store.get('a.md');
+    expect(state?.status === 'ready' && state.baseline.target).toBe(target);
+  });
+
   it('reuses HEAD on edits and reloads on explicit refresh', async () => {
     const read = vi.fn(async () => baseline);
     const store = new DiffStore(read);

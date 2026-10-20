@@ -8,6 +8,11 @@ export class Modal {
   open(): void { document.body.append(this.titleEl, this.contentEl); this.onOpen(); }
   close(): void { this.onClose(); this.titleEl.remove(); this.contentEl.remove(); }
 }
+export interface FuzzyMatch<T> { item: T; match: { score: number; matches: [number, number][] } }
+export class FuzzySuggestModal<T> extends Modal {
+  placeholder = '';
+  setPlaceholder(value: string): void { this.placeholder = value; }
+}
 export class ItemView {
   app = {};
   contentEl = document.createElement('div');

@@ -66,13 +66,13 @@ async def record(args, case, report):
     vault, profile = case / 'Literary demo', case / 'profile'
     vault.mkdir(); profile.mkdir()
     config = vault / '.obsidian'
-    plugin_dir = config / 'plugins' / 'better-md-diff'
+    plugin_dir = config / 'plugins' / 'better-md-diff-fork'
     plugin_dir.mkdir(parents=True)
     for name in ['main.js', 'manifest.json', 'styles.css']:
-        source = ROOT / 'dist' / 'better-md-diff' / name
+        source = ROOT / 'dist' / 'better-md-diff-fork' / name
         shutil.copyfile(source, plugin_dir / name)
         report.setdefault('build_sha256', {})[name] = hashlib.sha256(source.read_bytes()).hexdigest()
-    (config / 'community-plugins.json').write_text('["better-md-diff"]', encoding='utf-8')
+    (config / 'community-plugins.json').write_text('["better-md-diff-fork"]', encoding='utf-8')
     (config / 'app.json').write_text(json.dumps({
         'livePreview': False, 'showLineNumber': True, 'showInlineTitle': False,
         'readableLineLength': False, 'baseFontSize': 16, 'theme': 'moonstone',
@@ -128,14 +128,14 @@ async def record(args, case, report):
                 await context.route(re.compile(r'^https?://'), lambda route: route.abort())
                 page.on('pageerror', lambda error: report.setdefault('page_errors', []).append(str(error)))
                 page.on('console', lambda message: report.setdefault('console_errors', []).append(message.text) if message.type == 'error' else None)
-                trust = page.get_by_role('button', name=re.compile('Trust author and enable plugins|信任仓库作者并启用插件', re.I))
-                await page.wait_for_function("app.plugins.plugins['better-md-diff']?.store || [...document.querySelectorAll('button')].some(b => /Trust author and enable plugins|信任仓库作者并启用插件/i.test(b.textContent))")
+                trust = page.get_by_role('button', name=re.compile('Trust author and enable plugins', re.I))
+                await page.wait_for_function("app.plugins.plugins['better-md-diff-fork']?.store || [...document.querySelectorAll('button')].some(b => /Trust author and enable plugins/i.test(b.textContent))")
                 if await trust.is_visible():
                     await trust.click(); await trust.wait_for(state='hidden')
                     # Trust completion opens settings asynchronously, after enabling the plugin.
                     # Observe that real boundary before closing; an early close races the host.
                     await page.locator('.modal-container').filter(has_text='Restricted mode').wait_for()
-                await page.wait_for_function("app.plugins.plugins['better-md-diff']?.store")
+                await page.wait_for_function("app.plugins.plugins['better-md-diff-fork']?.store")
                 await page.evaluate('app.setting.close()')
                 await page.keyboard.press('Escape')
                 await page.locator('.modal-container').wait_for(state='hidden')
@@ -146,7 +146,7 @@ async def record(args, case, report):
                     await leaf.setViewState({type:'markdown', state:{file:note, mode:'source', source:true}});
                     leaf.view.editor.setValue(text);
                     app.workspace.leftSplit.collapse();
-                    await app.plugins.plugins['better-md-diff'].openDiff(note);
+                    await app.plugins.plugins['better-md-diff-fork'].openDiff(note);
                 }""", {'note': NOTE, 'text': working})
                 await page.locator('.workspace-split.mod-right-split').evaluate("el => { el.style.width = '460px'; el.style.flexBasis = '460px'; el.style.flexGrow = '0'; }")
                 await page.locator('.bmd-refresh').filter(has_text='Refresh').wait_for()

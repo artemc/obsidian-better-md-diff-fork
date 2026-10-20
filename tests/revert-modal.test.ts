@@ -28,7 +28,7 @@ describe('restoration confirmation UI', () => {
     const diff = computeDiff('old first\nkeep\nold second\n', '<img src=x onerror=alert(1)>\nkeep\nnew second\n');
     const modal = new RevertChangeModal({} as App, 'example.md', diff.changes[0]!, vi.fn());
     modal.open();
-    expect(document.querySelector('.bmd-revert-scope')?.textContent).toBe('当前第 1 行');
+    expect(document.querySelector('.bmd-revert-scope')?.textContent).toBe('Current line 1');
     expect(document.querySelector('.bmd-revert-preview--added')?.textContent).toBe('<img src=x onerror=alert(1)>');
     expect(document.querySelector('.bmd-revert-preview--deleted')?.textContent).toBe('old first');
     expect(document.querySelector('img')).toBeNull();
@@ -40,8 +40,8 @@ describe('restoration confirmation UI', () => {
     const change = computeDiff('', 'x'.repeat(1000) + '\n' + 'line\n'.repeat(50)).changes[0]!;
     const modal = new RevertChangeModal({} as App, 'large.md', change, vi.fn());
     modal.open();
-    expect(document.body.textContent).toContain('预览已截断');
-    expect(document.body.textContent).toContain('撤销 51 行新增');
+    expect(document.body.textContent).toContain('Preview truncated');
+    expect(document.body.textContent).toContain('remove 51 added lines');
     expect(document.querySelector('.bmd-revert-preview--added')!.textContent!.length).toBeLessThan(1000);
     modal.close();
   });
@@ -51,9 +51,9 @@ describe('restoration confirmation UI', () => {
     const confirm = vi.fn(async () => {});
     const modal = new RevertChangeModal({} as App, 'example.md', change, confirm);
     modal.open();
-    expect(document.body.textContent).toContain('撤销 1 行新增，恢复 1 行删除');
+    expect(document.body.textContent).toContain('remove 1 added lines and recover 1 deleted lines');
     expect(confirm).not.toHaveBeenCalled();
-    const button = Array.from(document.querySelectorAll('button')).find((item) => item.textContent === '确认还原')!;
+    const button = Array.from(document.querySelectorAll('button')).find((item) => item.textContent === 'Confirm restoration')!;
     expect(button.classList.contains(modern ? 'mod-destructive' : 'mod-warning')).toBe(true);
     button.click();
     expect(button.disabled).toBe(true);

@@ -26,7 +26,15 @@
 .bmd-file { font-size: var(--font-ui-medium); color: var(--text-normal); font-weight: 600; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .bmd-directory { margin-top: 2px; color: var(--text-muted); font-size: var(--font-ui-smaller); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .bmd-base { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; color: var(--text-muted); }
-.bmd-baseline-ref { display: inline-flex; align-items: center; gap: 6px; }
+.bmd-panel button.bmd-baseline-ref { display: inline-flex; align-items: center; gap: 6px; width: auto; height: auto; min-height: 0; margin: 0; padding: 2px 4px; border: 0; border-radius: 4px; box-shadow: none; background: transparent; color: inherit; font: inherit; }
+.bmd-panel button.bmd-baseline-ref:hover { background: var(--background-modifier-hover); color: var(--text-normal); }
+.bmd-baseline-subject { min-width: 0; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--text-normal); }
+.bmd-panel button.bmd-baseline-reset { width: auto; height: auto; min-height: 0; margin: 0; padding: 1px 6px; border: 1px solid var(--background-modifier-border); border-radius: 4px; box-shadow: none; background: transparent; color: var(--text-muted); font-size: var(--font-ui-smaller); }
+.bmd-panel button.bmd-baseline-reset:hover { color: var(--text-normal); }
+.bmd-commit-choice { display: grid; gap: 2px; }
+.bmd-commit-subject { overflow-wrap: anywhere; }
+.bmd-commit-current { margin-inline-start: 8px; padding: 0 5px; border-radius: 3px; background: rgba(var(--color-blue-rgb), 0.12); color: var(--bmd-navigation, var(--text-accent)); font-size: var(--font-ui-smaller); }
+.bmd-commit-meta { color: var(--text-muted); font-size: var(--font-ui-smaller); overflow-wrap: anywhere; }
 .bmd-base .bmd-ref { padding: 1px 5px; border-radius: 4px; background: var(--background-primary); color: var(--text-normal); font-family: var(--font-monospace); font-size: var(--font-ui-smaller); }
 .bmd-base-arrow { color: var(--text-muted); }
 .bmd-new-file { font-size: var(--font-ui-smaller); }
@@ -90,6 +98,15 @@
 .bmd-inline-whitespace[data-symbol='→']::after { content: attr(data-symbol); position: absolute; inset-inline-start: 0; top: 0; white-space: pre; line-height: 1; pointer-events: none; }
 .bmd-empty-line::after { content: attr(data-empty-label); color: var(--text-muted); font-size: var(--font-ui-smaller); }
 .bmd-no-inline-highlights .bmd-row-text .bmd-inline-change { background: transparent; }
+/* Word styles: mixed lines keep normal text, changed words carry the color (git --word-diff=color). */
+.bmd-row--modified { background: transparent; }
+.bmd-words-color .bmd-row-text .bmd-word-added { color: color-mix(in srgb, var(--text-success) 50%, var(--text-normal)); }
+.bmd-words-color .bmd-row-text .bmd-word-deleted { color: color-mix(in srgb, var(--text-error) 60%, var(--text-normal)); }
+/* Plain style is git --word-diff=plain: markers carry the meaning, without color. */
+.bmd-words-plain .bmd-row--word, .bmd-words-plain .bmd-row--word .bmd-sign { background: transparent; }
+.bmd-words-plain .bmd-row--word .bmd-row-text, .bmd-words-plain .bmd-row--word .bmd-sign { color: var(--text-normal); }
+.bmd-words-plain .bmd-row-text mark.bmd-inline-change { background: transparent; }
+.bmd-word-marker { color: var(--text-muted); font-weight: 700; }
 .bmd-hide-whitespace .bmd-inline-whitespace { background: none; }
 .bmd-hide-whitespace .bmd-inline-whitespace::after, .bmd-hide-whitespace .bmd-empty-line::after { content: none; }
 

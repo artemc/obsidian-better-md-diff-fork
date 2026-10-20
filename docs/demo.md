@@ -1,5 +1,7 @@
 # Obsidian demo
 
+> Historical evidence from the upstream project. Chinese host runs below refer to the bilingual interface that this fork has removed; the fork is English only.
+
 ![Better MD Diff in Obsidian: edit, inspect a deletion, restore one change, and undo](images/obsidian-demo.gif)
 
 [Static preview](images/obsidian-demo.png) · [GIF file](images/obsidian-demo.gif)
@@ -79,8 +81,7 @@ The personal branch now groups navigation as **↑ Change 1 / 2 ↓**, puts stat
 
 ```bash
 npm run check
-PYTHONIOENCODING=utf-8 python scripts/host-smoke.py --executable "C:/Users/YOU/AppData/Local/Obsidian/Obsidian.exe" --language en
-PYTHONIOENCODING=utf-8 python scripts/host-smoke.py --executable "C:/Users/YOU/AppData/Local/Obsidian/Obsidian.exe" --language zh
+PYTHONIOENCODING=utf-8 python scripts/host-smoke.py --executable "C:/Users/YOU/AppData/Local/Obsidian/Obsidian.exe"
 ```
 
 Checkpoint evidence (before the range-flag/color changes below): **217 automated tests**, **36 host checks per language**, **36 Chromium whitespace-layout cases**, and the long-document Live Preview stability regression passed. Reports are in `.test-vault/host-wnserqf1/` (English), `.test-vault/host-zvxtmovc/` (Chinese), `.test-vault/whitespace-3i3h8w2n/`, and `.test-vault/stability-ywhntwl2/`. These are generated fixtures, not personal notes.
@@ -132,7 +133,7 @@ Ignored local evidence:
 
 ### Change counts and group labels
 
-Navigation explicitly shows `Change 1 / 3` / `改动 1 / 3`. A group heading now reads, for example, `Current lines 109–116 · 2 changes` / `当前 109–116 行 · 2 处改动`. There is no competing block-number sequence. Counts refer to independent operations, not added/deleted line totals. Groups, context and individual navigation/restoration scopes are unchanged; pure-deletion groups still label HEAD ranges.
+Navigation explicitly shows `Change 1 / 3`. A group heading now reads, for example, `Current lines 109–116 · 2 changes`. There is no competing block-number sequence. Counts refer to independent operations, not added/deleted line totals. Groups, context and individual navigation/restoration scopes are unchanged; pure-deletion groups still label HEAD ranges.
 
 Unit coverage checks three changes across two groups, singular/plural English, language switching, shifted cached ranges, pending selection snapshots, and regrouping when context changes without changing the action total. Final **225 automated tests** and **42 checks per host language** pass. Real-host coverage visits each of those three changes and restores only the selected nearby item. The 280/440px light/dark toolbar checks still report no overlap and a 117.5px ordinary header; no CSS/layout adjustment was needed.
 
